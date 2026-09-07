@@ -1,4 +1,4 @@
-1. # FLUX Realism Web
+# FLUX Realism Web
 
    本项目使用 Hugging Face 提供的模型推理服务，调用 `XLabs-AI/flux-RealismLora` 模型生成写实图像，并在 API 调用的基础上结合 Flask、HTML、CSS 和 JavaScript，实现了一个简单的交互式 AI 图像生成网页。
 
