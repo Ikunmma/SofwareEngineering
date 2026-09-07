@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLUX Realism 图像生成器</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#111827}
+.page{width:92%;max-width:1250px;margin:45px auto}
+.header{margin-bottom:28px}
+.header h1{margin:0;font-size:30px}
+.header p{margin:7px 0 0;color:#6b7280}
+.main{display:grid;grid-template-columns:360px 1fr;gap:28px;align-items:stretch}
+.panel{border:1px solid #e5e7eb;border-radius:16px;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.045)}
+.controls{padding:24px}
+.controls h2{font-size:18px;margin:0 0 22px}
+.group{margin-bottom:23px}
+.label{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;font-size:14px;font-weight:600}
+.value{color:#4f46e5;font-weight:600}
+textarea{width:100%;min-height:155px;padding:13px 14px;border:1px solid #d1d5db;border-radius:10px;outline:none;resize:vertical;font:inherit;font-size:14px;line-height:1.6}
+textarea:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.09)}
+input[type=range]{width:100%;accent-color:#111827;cursor:pointer}
+.range-meta{display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:#9ca3af}
+.generate{width:100%;border:0;border-radius:10px;padding:13px;background:#111827;color:#fff;font-size:15px;font-weight:650;cursor:pointer}
+.generate:hover{background:#1f2937}
+.generate:disabled{opacity:.5;cursor:not-allowed}
+#status{min-height:20px;margin-top:13px;text-align:center;font-size:13px;color:#6b7280}
+.result-panel{min-height:590px;padding:25px;background:#fafafa;display:flex;align-items:center;justify-content:center}
+.placeholder{text-align:center;color:#9ca3af}
+.placeholder-icon{width:56px;height:56px;margin:0 auto 14px;border:2px solid #d1d5db;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:25px}
+#resultArea{display:none;width:100%;text-align:center}
+#resultImage{display:block;max-width:100%;max-height:650px;margin:0 auto;border-radius:11px;object-fit:contain;box-shadow:0 7px 25px rgba(0,0,0,.08)}
+.download{margin-top:20px;padding:10px 22px;border:1px solid #d1d5db;border-radius:9px;background:#fff;color:#111827;font-size:14px;font-weight:600;cursor:pointer}
+.download:hover{background:#f3f4f6}
+@media(max-width:850px){.main{grid-template-columns:1fr}.result-panel{min-height:450px}}
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <h1>FLUX Realism</h1>
+        <p>基于 Hugging Face API 的写实图像生成工具</p>
+    </div>
+
+    <div class="main">
+        <div class="panel controls">
+            <h2>生成参数</h2>
+
+            <div class="group">
+                <div class="label"><span>Prompt</span></div>
+                <textarea id="prompt" placeholder="Describe the image you want to generate..."></textarea>
+            </div>
+
+            <div class="group">
+                <div class="label">
+                    <span>图像宽度</span>
+                    <span class="value"><span id="widthValue">768</span> px</span>
+                </div>
+                <input id="width" type="range" min="512" max="1024" value="768" step="64">
+                <div class="range-meta"><span>512</span><span>1024</span></div>
+            </div>
+
+            <div class="group">
+                <div class="label">
+                    <span>图像高度</span>
+                    <span class="value"><span id="heightValue">768</span> px</span>
+                </div>
+                <input id="height" type="range" min="512" max="1024" value="768" step="64">
+                <div class="range-meta"><span>512</span><span>1024</span></div>
+            </div>
+
+            <div class="group">
+                <div class="label">
+                    <span>清晰度</span>
+                    <span class="value"><span id="qualityValue">28</span></span>
+                </div>
+                <input id="quality" type="range" min="10" max="50" value="28" step="1">
+                <div class="range-meta"><span>快速</span><span>高清</span></div>
+            </div>
+
+            <button id="generateBtn" class="generate">生成图片</button>
+            <div id="status"></div>
+        </div>
+
+        <div class="panel result-panel">
+            <div id="placeholder" class="placeholder">
+                <div class="placeholder-icon">▧</div>
+                <div>生成的图片将在这里显示</div>
+            </div>
+
+            <div id="resultArea">
+                <img id="resultImage" alt="AI Generated Image">
+                <button id="downloadBtn" class="download">↓ 下载图片</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const promptInput = $("prompt");
+const widthInput = $("width");
+const heightInput = $("height");
+const qualityInput = $("quality");
+const generateBtn = $("generateBtn");
+const statusBox = $("status");
+const placeholder = $("placeholder");
+const resultArea = $("resultArea");
+const resultImage = $("resultImage");
+
+widthInput.oninput = () => $("widthValue").textContent = widthInput.value;
+heightInput.oninput = () => $("heightValue").textContent = heightInput.value;
+qualityInput.oninput = () => $("qualityValue").textContent = qualityInput.value;
+
+generateBtn.onclick = async () => {
+    const prompt = promptInput.value.trim();
+
+    if (!prompt) {
+        statusBox.textContent = "请输入 Prompt";
+        return;
+    }
+
+    generateBtn.disabled = true;
+    generateBtn.textContent = "正在生成...";
+    statusBox.textContent = "正在调用 FLUX 模型...";
+
+    try {
+        const response = await fetch("/generate", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                prompt,
+                width: Number(widthInput.value),
+                height: Number(heightInput.value),
+                quality: Number(qualityInput.value)
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || "生成失败");
+        }
+
+        resultImage.src = data.image;
+        placeholder.style.display = "none";
+        resultArea.style.display = "block";
+        statusBox.textContent = "生成成功";
+    } catch (error) {
+        statusBox.textContent = "生成失败：" + error.message;
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = "生成图片";
+    }
+};
+
+$("downloadBtn").onclick = () => {
+    if (!resultImage.src) return;
+    const link = document.createElement("a");
+    link.href = resultImage.src;
+    link.download = "flux-generated-image.png";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+};
+</script>
+</body>
+</html>
