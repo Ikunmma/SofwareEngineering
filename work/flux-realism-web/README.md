@@ -16,8 +16,6 @@
    - 下载生成的 PNG 图片
    - 在后端终端输出 API 调用记录
 
-   Web 交互界面
-
    项目运行后的前端页面如下：
 
    ![web-interface](https://raw.githubusercontent.com/Ikunmma/picture-picgo/main/20260907180118609.png)
