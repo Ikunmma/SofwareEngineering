@@ -90,6 +90,31 @@ class RestartStateTest(unittest.TestCase):
         self.wait_for_animation()
         self.assertEqual(self.app.game.remaining_arrows(), 12)
 
+    def test_clearing_last_arrow_opens_result_and_next_level(self) -> None:
+        # 用单个向上箭头构造可快速验证的通关场景。
+        self.app.game.board = [[None] * self.app.game.cols for _ in range(self.app.game.rows)]
+        self.app.game.board[0][0] = "up"
+        self.app.draw_board()
+        self.app._update_arrow_count()
+
+        self.click_cell(0, 0)
+        self.wait_for_animation()
+
+        self.assertEqual(self.app.current_screen, "level_clear")
+        self.assertEqual(self.app.current_level_index, 0)
+        self.assertIsNotNone(self.app.next_level_button)
+        self.assertEqual(self.app.next_level_button.cget("text"), "下一关  →")
+
+        self.app.next_level_button.invoke()
+        self.root.update()
+
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertEqual(self.app.current_level_index, 1)
+        self.assertEqual(self.app.game.remaining_arrows(), 17)
+        self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
+        self.assertEqual(self.app.arrow_count_label.cget("text"), "17")
+        self.assertEqual(self.app.mistakes_label.cget("text"), "3")
+
 
 if __name__ == "__main__":
     unittest.main()

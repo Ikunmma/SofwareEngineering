@@ -62,6 +62,7 @@ class ArrowEscapeApp:
         self.arrow_count_label: tk.Label | None = None
         self.mistakes_label: tk.Label | None = None
         self.retry_button: tk.Button | None = None
+        self.next_level_button: tk.Button | None = None
         self.current_level_index = 0
         self.game = ArrowBoard(LEVELS[self.current_level_index].board)
         self.selected_cell: tuple[int, int] | None = None
@@ -361,6 +362,71 @@ class ArrowEscapeApp:
         self.mistakes_remaining = MAX_MISTAKES
         if self.current_screen == "game":
             self.show_game_screen()
+
+    def show_level_clear(self) -> None:
+        """显示当前关卡的通关结果。"""
+        self.clear_screen()
+        self.current_screen = "level_clear"
+        is_last_level = self.current_level_index == len(LEVELS) - 1
+
+        canvas = tk.Canvas(
+            self.root,
+            width=WINDOW_WIDTH,
+            height=WINDOW_HEIGHT,
+            bg=BACKGROUND,
+            highlightthickness=0,
+        )
+        canvas.pack(fill="both", expand=True)
+        canvas.create_oval(-130, -120, 250, 260, fill="#DDF7EF", outline="")
+        canvas.create_oval(750, 510, 1100, 860, fill=ACCENT_SOFT, outline="")
+        canvas.create_rectangle(230, 105, 730, 615, fill=CARD, outline="")
+        canvas.create_oval(405, 155, 555, 305, fill="#DDF7EF", outline="")
+        canvas.create_text(
+            480,
+            230,
+            text="✓",
+            fill=MINT,
+            font=("Segoe UI Symbol", 52, "bold"),
+        )
+        canvas.create_text(
+            480,
+            344,
+            text=f"第 {self.current_level_index + 1} 关通关！",
+            fill=TEXT_PRIMARY,
+            font=(FONT_FAMILY, 27, "bold"),
+        )
+        canvas.create_text(
+            480,
+            394,
+            text=f"你已清空“{LEVELS[self.current_level_index].name}”的所有箭头",
+            fill=TEXT_SECONDARY,
+            font=(FONT_FAMILY, 11),
+        )
+
+        button_host = tk.Frame(canvas, bg=CARD)
+        canvas.create_window(480, 480, window=button_host)
+        if is_last_level:
+            button_text = "返回主页"
+            button_command = self.show_start_screen
+        else:
+            button_text = "下一关  →"
+            button_command = self.advance_to_next_level
+        self.next_level_button = self.make_button(
+            button_host,
+            button_text,
+            button_command,
+            width=14,
+        )
+        self.next_level_button.pack()
+
+    def advance_to_next_level(self) -> None:
+        """加载下一关并返回游戏界面。"""
+        next_index = self.current_level_index + 1
+        if next_index >= len(LEVELS):
+            self.show_start_screen()
+            return
+        self.load_level(next_index)
+        self.show_game_screen()
 
     def show_game_over(self) -> None:
         """显示失误机会耗尽后的失败界面。"""
@@ -667,7 +733,7 @@ class ArrowEscapeApp:
         self.draw_board()
         self._update_arrow_count()
         if self.game.remaining_arrows() == 0:
-            self._show_feedback("棋盘已清空！", "success")
+            self.show_level_clear()
         else:
             self._show_feedback(
                 f"第 {row + 1} 行第 {col + 1} 列的{DIRECTION_NAMES[direction]}箭头已飞出",
