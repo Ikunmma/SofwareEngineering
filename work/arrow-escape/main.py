@@ -47,6 +47,7 @@ COLLISION_DELAY_MS = 45
 COLLISION_OFFSETS = (-8, 8, -7, 7, -4, 4, 0)
 COLLISION_BACKGROUND = "#FFE4E4"
 COLLISION_COLOR = "#D83B3B"
+MAX_MISTAKES = 3
 
 
 class ArrowEscapeApp:
@@ -59,8 +60,11 @@ class ArrowEscapeApp:
         self.board_canvas: tk.Canvas | None = None
         self.feedback_label: tk.Label | None = None
         self.arrow_count_label: tk.Label | None = None
+        self.mistakes_label: tk.Label | None = None
+        self.retry_button: tk.Button | None = None
         self.game = ArrowBoard(STARTER_BOARD)
         self.selected_cell: tuple[int, int] | None = None
+        self.mistakes_remaining = MAX_MISTAKES
         self.animating = False
         self.show_start_screen()
 
@@ -161,7 +165,7 @@ class ArrowEscapeApp:
         self.start_button = self.make_button(
             button_host,
             "开始游戏  →",
-            self.show_game_screen,
+            self.start_new_game,
             width=15,
         )
         self.start_button.pack()
@@ -276,7 +280,12 @@ class ArrowEscapeApp:
             str(self.game.remaining_arrows()),
             ACCENT,
         )
-        self._make_status_card(sidebar, "剩余失误", "3", MINT)
+        self.mistakes_label = self._make_status_card(
+            sidebar,
+            "剩余失误",
+            str(self.mistakes_remaining),
+            MINT,
+        )
 
         tip = tk.Frame(sidebar, bg="#FFF8E8", padx=18, pady=16)
         tip.pack(fill="x", pady=(8, 24))
@@ -329,6 +338,82 @@ class ArrowEscapeApp:
             bd=0,
             cursor="hand2",
         ).pack()
+
+    def start_new_game(self) -> None:
+        """从开始界面进入一个全新的游戏。"""
+        self.game.restart()
+        self.selected_cell = None
+        self.mistakes_remaining = MAX_MISTAKES
+        self.show_game_screen()
+
+    def show_game_over(self) -> None:
+        """显示失误机会耗尽后的失败界面。"""
+        self.clear_screen()
+        self.current_screen = "game_over"
+
+        canvas = tk.Canvas(
+            self.root,
+            width=WINDOW_WIDTH,
+            height=WINDOW_HEIGHT,
+            bg=BACKGROUND,
+            highlightthickness=0,
+        )
+        canvas.pack(fill="both", expand=True)
+        canvas.create_oval(-120, 500, 260, 880, fill="#FFE8E8", outline="")
+        canvas.create_oval(760, -170, 1110, 180, fill=ACCENT_SOFT, outline="")
+        canvas.create_rectangle(230, 105, 730, 615, fill=CARD, outline="")
+        canvas.create_oval(405, 160, 555, 310, fill="#FFE8E8", outline="")
+        canvas.create_text(
+            480,
+            235,
+            text="×",
+            fill=COLLISION_COLOR,
+            font=(FONT_FAMILY, 54, "bold"),
+        )
+        canvas.create_text(
+            480,
+            355,
+            text="本关挑战失败",
+            fill=TEXT_PRIMARY,
+            font=(FONT_FAMILY, 26, "bold"),
+        )
+        canvas.create_text(
+            480,
+            402,
+            text="失误机会已耗尽，观察箭头前方后再试一次吧",
+            fill=TEXT_SECONDARY,
+            font=(FONT_FAMILY, 11),
+        )
+
+        button_host = tk.Frame(canvas, bg=CARD)
+        canvas.create_window(480, 485, window=button_host)
+        self.retry_button = self.make_button(
+            button_host,
+            "重新挑战",
+            self.retry_after_failure,
+            width=14,
+        )
+        self.retry_button.pack()
+        tk.Button(
+            button_host,
+            text="返回主页",
+            command=self.show_start_screen,
+            font=(FONT_FAMILY, 11),
+            fg=TEXT_SECONDARY,
+            bg=CARD,
+            activeforeground=ACCENT,
+            activebackground=CARD,
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+        ).pack(pady=(14, 0))
+
+    def retry_after_failure(self) -> None:
+        """从失败界面恢复本关的完整初始状态。"""
+        self.game.restart()
+        self.selected_cell = None
+        self.mistakes_remaining = MAX_MISTAKES
+        self.show_game_screen()
 
     @staticmethod
     def _make_status_card(
@@ -452,6 +537,8 @@ class ArrowEscapeApp:
 
         self.selected_cell = cell
         if self.game.is_blocked(row, col):
+            self.mistakes_remaining -= 1
+            self._update_mistakes()
             self.draw_board()
             self.animating = True
             self._show_feedback(
@@ -515,6 +602,9 @@ class ArrowEscapeApp:
         """恢复碰撞箭头的颜色和位置，保持棋盘数据不变。"""
         self.selected_cell = None
         self.animating = False
+        if self.mistakes_remaining <= 0:
+            self.show_game_over()
+            return
         self.draw_board()
         self._show_feedback(
             f"第 {row + 1} 行第 {col + 1} 列的箭头未能飞出",
@@ -580,6 +670,11 @@ class ArrowEscapeApp:
         if self.arrow_count_label is not None:
             self.arrow_count_label.config(text=str(self.game.remaining_arrows()))
 
+    def _update_mistakes(self) -> None:
+        """使侧边栏失误数字与当前状态同步。"""
+        if self.mistakes_label is not None:
+            self.mistakes_label.config(text=str(self.mistakes_remaining))
+
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
         if self.animating:
@@ -587,8 +682,10 @@ class ArrowEscapeApp:
             return
         self.game.restart()
         self.selected_cell = None
+        self.mistakes_remaining = MAX_MISTAKES
         self.draw_board()
         self._update_arrow_count()
+        self._update_mistakes()
         self._show_feedback("棋盘已恢复，请重新选择箭头", "success")
 
 
