@@ -18,6 +18,7 @@ import pygame  # noqa: E402
 import main  # noqa: E402
 from advanced_logic import AdvancedBoard  # noqa: E402
 from levels import LEVELS  # noqa: E402
+from advanced_levels import ADVANCED_LEVELS  # noqa: E402
 
 
 class PygameStateTest(unittest.TestCase):
@@ -101,12 +102,55 @@ class PygameStateTest(unittest.TestCase):
         self.app.show_hint()
         self.assertIn(self.app.hint_cell, self.app.game.removable_arrows())
         self.assertIn("提示", self.app.feedback)
-
         self.app.selected_mode = "advanced"
         self.app.start_new_game()
         self.app.show_hint()
         self.assertIn(self.app.hint_arrow_id, self.app.game.removable_arrows())
         self.assertIn("提示", self.app.feedback)
+
+    def test_all_advanced_levels_clear_through_mouse_events_and_animation(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        for index, level in enumerate(ADVANCED_LEVELS):
+            self.assertEqual(self.app.current_level_index, index)
+            for _ in level.paths:
+                self.app.handle_event(pygame.event.Event(
+                    pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.hint_rect.center))
+                ident = self.app.hint_arrow_id
+                self.assertIsNotNone(ident)
+                head = self.app.game.path(ident).cells[-1]
+                self.app.handle_event(pygame.event.Event(
+                    pygame.MOUSEBUTTONDOWN, button=1,
+                    pos=tuple(map(int, self.app.cell_center(*head)))))
+                self.assertEqual(self.app.animation["kind"], "flight")
+                for frame in range(600):
+                    self.app.update(1 / 60)
+                    if frame == 10:
+                        self.app.draw()
+                    if not self.app.animating:
+                        break
+                self.assertFalse(self.app.animating)
+                self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
+            self.assertEqual(self.app.game.remaining_arrows(), 0)
+            expected = "all_clear" if index == len(ADVANCED_LEVELS) - 1 else "level_clear"
+            self.assertEqual(self.app.current_screen, expected)
+            if expected == "level_clear":
+                self.app.handle_event(pygame.event.Event(
+                    pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.next_button.rect.center))
+
+    def test_flying_body_follows_original_path_and_retains_length(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        ident = max(self.app.game.active_ids, key=lambda i: len(self.app.game.path(i).cells))
+        path = self.app.game.path(ident)
+        size = self.app.board_geometry()[2]
+        length = (len(path.cells) - 1) * size
+        for travel in (0, size * 0.5, size * 2.5, length, length + 200):
+            points = self.app.advanced_flight_points(ident, travel)
+            actual = sum(abs(a[0] - b[0]) + abs(a[1] - b[1]) for a, b in zip(points, points[1:]))
+            self.assertAlmostEqual(actual, length)
+        self.assertEqual(self.app.advanced_flight_points(ident, size)[0],
+                         self.app.cell_center(*path.cells[1]))
 
     def test_restart_restores_board_and_mistakes(self) -> None:
         initial_count = self.app.game.remaining_arrows()

@@ -9,7 +9,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from advanced_levels import ADVANCED_LEVELS, make_dense_advanced_level  # noqa: E402
+from advanced_levels import ADVANCED_LEVELS, AdvancedLevel, PathData, exit_ray, make_dense_advanced_level  # noqa: E402
 from advanced_logic import AdvancedBoard, solve_advanced  # noqa: E402
 
 
@@ -45,10 +45,21 @@ class AdvancedBoardTest(unittest.TestCase):
     def test_random_levels_are_dense_and_have_varied_paths(self) -> None:
         for level in ADVANCED_LEVELS:
             occupied = {cell for path in level.paths for cell in path.cells}
-            self.assertGreaterEqual(len(occupied) / (level.rows * level.cols), 0.80, level.name)
+            self.assertGreaterEqual(len(occupied) / (level.rows * level.cols), 0.97, level.name)
             self.assertGreaterEqual(len({len(p.cells) for p in level.paths}), 5)
             self.assertGreaterEqual(max(len(p.cells) for p in level.paths), 18)
             self.assertEqual(len({p.direction for p in level.paths}), 4)
+
+    def test_generated_paths_never_block_their_own_exit(self) -> None:
+        for level in ADVANCED_LEVELS:
+            for path in level.paths:
+                self.assertFalse(set(path.cells) & exit_ray(path.cells[-1], path.direction, level.rows, level.cols))
+
+    def test_self_crossing_exit_is_blocked(self) -> None:
+        path = PathData(((0, 1), (0, 0), (1, 0), (2, 0), (2, 1), (1, 1)), "up", "mint")
+        board = AdvancedBoard(AdvancedLevel("self", 3, 3, (path,)))
+        self.assertTrue(board.is_blocked(0))
+        self.assertFalse(board.remove_arrow(0))
 
     def test_generator_reproduces_seed_and_reverse_order_is_a_solution(self) -> None:
         for seed in (3, 7, 11):

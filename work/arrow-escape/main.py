@@ -290,8 +290,10 @@ class ArrowEscapeApp:
             row_step, col_step = DIRECTION_VECTORS[direction]
             if "arrow_id" in self.animation:
                 arrow_id = int(self.animation["arrow_id"])
-                head_row, head_col = self.game.path(arrow_id).cells[-1]
-                start_x, start_y = self.cell_center(head_row, head_col)
+                tail_x, tail_y = self.advanced_flight_points(arrow_id, elapsed * FLIGHT_SPEED)[0]
+                if tail_x < -80 or tail_x > WINDOW_WIDTH + 80 or tail_y < -80 or tail_y > WINDOW_HEIGHT + 80:
+                    self._complete_advanced_flight(arrow_id)
+                return
             else:
                 row = int(self.animation["row"])
                 col = int(self.animation["col"])
@@ -409,6 +411,8 @@ class ArrowEscapeApp:
 
     def show_hint(self) -> None:
         """高亮并说明一个当前可以安全消除的箭头。"""
+        if self.animating:
+            return
         if self.selected_mode == "advanced":
             choices = self.game.removable_arrows()
             if not choices:
@@ -802,6 +806,23 @@ class ArrowEscapeApp:
                 arrow_size,
             )
 
+    def advanced_flight_points(self, arrow_id: int, travel: float) -> list[tuple[float, float]]:
+        """尾巴沿原折线前进，头部沿出口延伸，整条线长度保持不变。"""
+        path = self.game.path(arrow_id)
+        points = [self.cell_center(r, c) for r, c in path.cells]
+        cell_size = self.board_geometry()[2]
+        length = (len(points) - 1) * cell_size
+        dr, dc = DIRECTION_VECTORS[path.direction]
+        hx, hy = points[-1]
+        if travel >= length:
+            tail = (hx + dc * (travel - length), hy + dr * (travel - length))
+            return [tail, (hx + dc * travel, hy + dr * travel)]
+        segment = int(travel // cell_size)
+        fraction = (travel % cell_size) / cell_size
+        a, b = points[segment:segment + 2]
+        tail = (a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction)
+        return [tail, *points[segment + 1:], (hx + dc * travel, hy + dr * travel)]
+
     def draw_advanced_board(self, cell_size: int) -> None:
         """绘制进阶模式的多格折线箭头。"""
         for arrow_id in sorted(self.game.active_ids):
@@ -810,9 +831,7 @@ class ArrowEscapeApp:
             if self.animation and self.animation.get("arrow_id") == arrow_id:
                 elapsed = float(self.animation["elapsed"])
                 if self.animation["kind"] == "flight":
-                    direction = str(self.animation["direction"])
-                    row_step, col_step = DIRECTION_VECTORS[direction]
-                    offset = (col_step * FLIGHT_SPEED * elapsed, row_step * FLIGHT_SPEED * elapsed)
+                    pass  # 飞出位置由 advanced_flight_points 沿折线计算。
                 else:
                     shake = math.sin(elapsed * 72) * 8 * (1 - elapsed / COLLISION_DURATION)
                     offset = (shake, 0.0)
@@ -833,9 +852,13 @@ class ArrowEscapeApp:
              int(self.cell_center(row, col)[1] + offset[1]))
             for row, col in path.cells
         ]
+        if self.animation and self.animation.get("arrow_id") == arrow_id and self.animation["kind"] == "flight":
+            points = [tuple(map(round, p)) for p in self.advanced_flight_points(
+                arrow_id, float(self.animation["elapsed"]) * FLIGHT_SPEED)]
         width = max(4, cell_size // 6)
-        shadow_points = [(x + 2, y + 3) for x, y in points]
-        if len(shadow_points) > 1:
+        if hinted:
+            pygame.draw.lines(self.screen, (255, 239, 156), False, points, width + 4)
+        if len(points) > 1:
             pygame.draw.lines(self.screen, color, False, points, width)
         for point in points[:-1]:
             pygame.draw.circle(self.screen, color, point, width // 2)
