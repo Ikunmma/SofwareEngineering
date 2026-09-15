@@ -19,6 +19,9 @@ WINDOW_WIDTH = 600
 WINDOW_HEIGHT = 820
 FPS = 60
 MAX_MISTAKES = 3
+STARTING_SCORE = 0
+ARROW_SCORE = 100
+COLLISION_PENALTY = 100
 
 BACKGROUND_TOP = (239, 244, 255)
 BACKGROUND_BOTTOM = (220, 230, 250)
@@ -120,6 +123,12 @@ class ArrowEscapeApp:
         self.current_level_index = 0
         self.game = ArrowBoard(LEVELS[0].board)
         self.mistakes_remaining = MAX_MISTAKES
+        self.elapsed_time = 0.0
+        self.level_score = STARTING_SCORE
+        self.total_score = 0
+        self.earned_stars = 0
+        self.par_time = 50.0
+        self.level_scored = False
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
@@ -318,6 +327,8 @@ class ArrowEscapeApp:
             self.start_new_game()
 
     def update(self, dt: float) -> None:
+        if self.current_screen == "game":
+            self.elapsed_time += max(0.0, dt)
         if not self.animation:
             return
         self.animation["elapsed"] = float(self.animation["elapsed"]) + dt
@@ -358,7 +369,8 @@ class ArrowEscapeApp:
             self.game = AdvancedBoard(levels[self.current_level_index])
         else:
             self.game = ArrowBoard(levels[self.current_level_index].board)
-        self.mistakes_remaining = MAX_MISTAKES
+        self.total_score = 0
+        self.reset_level_stats()
         self.selected_cell = None
         self.hint_cell = None
         self.hint_arrow_id = None
@@ -380,7 +392,7 @@ class ArrowEscapeApp:
             self.game = AdvancedBoard(levels[level_index])
         else:
             self.game = ArrowBoard(levels[level_index].board)
-        self.mistakes_remaining = MAX_MISTAKES
+        self.reset_level_stats()
         self.selected_cell = None
         self.hint_cell = None
         self.hint_arrow_id = None
@@ -399,11 +411,42 @@ class ArrowEscapeApp:
         """返回当前模式对应的关卡集合。"""
         return ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
 
+    def reset_level_stats(self) -> None:
+        """重置本关计时、分数和星级。"""
+        self.mistakes_remaining = MAX_MISTAKES
+        self.elapsed_time = 0.0
+        self.level_score = STARTING_SCORE
+        self.earned_stars = 0
+        self.level_scored = False
+        seconds_per_arrow = 4.0 if self.selected_mode == "advanced" else 2.0
+        self.par_time = max(30.0, self.game.remaining_arrows() * seconds_per_arrow)
+
+    @staticmethod
+    def format_time(seconds: float) -> str:
+        total_seconds = max(0, int(seconds))
+        return f"{total_seconds // 60:02d}:{total_seconds % 60:02d}"
+
+    def finish_level_stats(self) -> None:
+        """结算时间奖励、剩余机会奖励和星级，仅执行一次。"""
+        if self.level_scored:
+            return
+        time_bonus = max(0, int(self.par_time - self.elapsed_time) * 5)
+        mistake_bonus = self.mistakes_remaining * 100
+        self.level_score += time_bonus + mistake_bonus
+        if self.mistakes_remaining == MAX_MISTAKES and self.elapsed_time <= self.par_time:
+            self.earned_stars = 3
+        elif self.mistakes_remaining >= 1 and self.elapsed_time <= self.par_time * 1.5:
+            self.earned_stars = 2
+        else:
+            self.earned_stars = 1
+        self.total_score += self.level_score
+        self.level_scored = True
+
     def retry_after_failure(self) -> None:
         self.animating = False
         self.animation = None
         self.game.restart()
-        self.mistakes_remaining = MAX_MISTAKES
+        self.reset_level_stats()
         self.selected_cell = None
         self.hint_cell = None
         self.hint_arrow_id = None
@@ -415,7 +458,7 @@ class ArrowEscapeApp:
             self.set_feedback("请等待动画结束后再重新开始", "warning")
             return
         self.game.restart()
-        self.mistakes_remaining = MAX_MISTAKES
+        self.reset_level_stats()
         self.selected_cell = None
         self.hint_cell = None
         self.hint_arrow_id = None
@@ -500,6 +543,7 @@ class ArrowEscapeApp:
         self.hint_cell = None
         if self.game.is_blocked(row, col):
             self.mistakes_remaining -= 1
+            self.level_score = max(0, self.level_score - COLLISION_PENALTY)
             self.animating = True
             self.animation = {"kind": "collision", "row": row, "col": col, "elapsed": 0.0}
             self.set_feedback(f"碰撞！{DIRECTION_NAMES[direction]}箭头前方有阻挡", "danger")
@@ -520,6 +564,7 @@ class ArrowEscapeApp:
         self.hint_arrow_id = None
         if self.game.is_blocked(arrow_id):
             self.mistakes_remaining -= 1
+            self.level_score = max(0, self.level_score - COLLISION_PENALTY)
             self.animating = True
             self.animation = {
                 "kind": "collision", "arrow_id": arrow_id,
@@ -544,11 +589,13 @@ class ArrowEscapeApp:
             self.set_feedback("箭头没有消失，失误机会 -1", "danger")
 
     def _complete_arrow_flight(self, row: int, col: int, direction: str) -> None:
-        self.game.remove_arrow(row, col)
+        if self.game.remove_arrow(row, col):
+            self.level_score += ARROW_SCORE
         self.animating = False
         self.animation = None
         self.selected_cell = None
         if self.game.remaining_arrows() == 0:
+            self.finish_level_stats()
             if self.current_level_index == len(LEVELS) - 1:
                 self.show_all_clear()
             else:
@@ -560,11 +607,13 @@ class ArrowEscapeApp:
             )
 
     def _complete_advanced_flight(self, arrow_id: int) -> None:
-        self.game.remove_arrow(arrow_id)
+        if self.game.remove_arrow(arrow_id):
+            self.level_score += ARROW_SCORE
         self.animating = False
         self.animation = None
         self.hint_arrow_id = None
         if self.game.remaining_arrows() == 0:
+            self.finish_level_stats()
             if self.current_level_index == len(ADVANCED_LEVELS) - 1:
                 self.show_all_clear()
             else:
@@ -808,10 +857,13 @@ class ArrowEscapeApp:
         for index in range(MAX_MISTAKES):
             color = (255, 81, 88) if index < self.mistakes_remaining else (93, 95, 119)
             self.draw_heart(self.screen, (heart_x + index * 30, 77), color)
-        self.draw_text(
-            f"剩余箭头  {self.game.remaining_arrows()}", 300, 116, 15,
-            (216, 221, 238), center=True, bold=True,
-        )
+        status_color = (216, 221, 238)
+        self.draw_text(f"时间 {self.format_time(self.elapsed_time)}", 174, 116, 13,
+                       status_color, center=True, bold=True)
+        self.draw_text(f"箭头 {self.game.remaining_arrows()}", 300, 116, 13,
+                       status_color, center=True, bold=True)
+        self.draw_text(f"得分 {self.level_score}", 430, 116, 13,
+                       status_color, center=True, bold=True)
         self.draw_board()
 
         feedback_colors = {
@@ -1029,6 +1081,17 @@ class ArrowEscapeApp:
         self.draw_text(eyebrow, 300, 385, 15, accent, center=True, display=True)
         self.draw_text(title, 300, 435, 31, NAVY, center=True, bold=True)
         self.draw_text(note, 300, 487, 14, MUTED, center=True)
+        if kind != "game_over":
+            for index in range(3):
+                key = "star_yellow" if index < self.earned_stars else "star_grey"
+                star = pygame.transform.smoothscale(self.assets[key], (48, 45))
+                self.screen.blit(star, star.get_rect(center=(250 + index * 50, 540)))
+        else:
+            self.draw_text("本次未获得星星", 300, 540, 14, RED, center=True, bold=True)
+        self.draw_text(
+            f"用时 {self.format_time(self.elapsed_time)}   ·   本关 {self.level_score} 分   ·   累计 {self.total_score} 分",
+            300, 585, 13, NAVY, center=True, bold=True,
+        )
         button.draw(self, mouse)
         self.draw_text("继续保持，下一支箭也会找到出口", 300, 705, 12, MUTED, center=True)
 

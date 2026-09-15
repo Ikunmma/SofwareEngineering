@@ -188,6 +188,58 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
         self.assertIn("已恢复", self.app.feedback)
 
+    def test_timer_score_and_collision_penalty(self) -> None:
+        self.app.update(2.4)
+        self.assertAlmostEqual(self.app.elapsed_time, 2.4)
+        initial_score = self.app.level_score
+        self.click_cell(*self.app.game.removable_arrows()[0])
+        self.finish_animation()
+        self.assertEqual(self.app.level_score, initial_score + main.ARROW_SCORE)
+        self.click_cell(*self.first_blocked_cell())
+        self.finish_animation()
+        self.assertEqual(
+            self.app.level_score,
+            initial_score + main.ARROW_SCORE - main.COLLISION_PENALTY,
+        )
+
+    def test_restart_resets_timer_score_and_stars(self) -> None:
+        self.app.elapsed_time = 18.0
+        self.app.level_score = 1234
+        self.app.earned_stars = 2
+        self.app.restart_board()
+        self.assertEqual(self.app.elapsed_time, 0.0)
+        self.assertEqual(self.app.level_score, main.STARTING_SCORE)
+        self.assertEqual(self.app.earned_stars, 0)
+
+    def test_clear_awards_three_stars_and_completion_bonuses(self) -> None:
+        self.app.game.board = [[None] * self.app.game.cols for _ in range(self.app.game.rows)]
+        self.app.game.board[0][0] = "up"
+        self.app.elapsed_time = 10.0
+        self.click_cell(0, 0)
+        self.finish_animation()
+        self.assertEqual(self.app.earned_stars, 3)
+        self.assertGreater(self.app.level_score, main.STARTING_SCORE + main.ARROW_SCORE)
+        self.assertEqual(self.app.total_score, self.app.level_score)
+        frozen_time = self.app.elapsed_time
+        self.app.update(5.0)
+        self.assertEqual(self.app.elapsed_time, frozen_time)
+
+    def test_star_rating_boundaries(self) -> None:
+        self.app.mistakes_remaining = 2
+        self.app.elapsed_time = self.app.par_time
+        self.app.finish_level_stats()
+        self.assertEqual(self.app.earned_stars, 2)
+
+        self.app.reset_level_stats()
+        self.app.mistakes_remaining = 1
+        self.app.elapsed_time = self.app.par_time * 2
+        self.app.finish_level_stats()
+        self.assertEqual(self.app.earned_stars, 1)
+
+    def test_time_format(self) -> None:
+        self.assertEqual(self.app.format_time(0), "00:00")
+        self.assertEqual(self.app.format_time(65.9), "01:05")
+
     def test_animation_locks_restart(self) -> None:
         self.click_cell(*self.app.game.removable_arrows()[0])
         self.assertTrue(self.app.animating)
