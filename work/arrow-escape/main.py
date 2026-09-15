@@ -4,7 +4,7 @@ import tkinter as tk
 from collections.abc import Callable
 
 from game_logic import DIRECTION_VECTORS, ArrowBoard
-from levels import DIRECTION_SYMBOLS, STARTER_BOARD
+from levels import DIRECTION_SYMBOLS, LEVELS
 
 
 WINDOW_WIDTH = 960
@@ -62,7 +62,8 @@ class ArrowEscapeApp:
         self.arrow_count_label: tk.Label | None = None
         self.mistakes_label: tk.Label | None = None
         self.retry_button: tk.Button | None = None
-        self.game = ArrowBoard(STARTER_BOARD)
+        self.current_level_index = 0
+        self.game = ArrowBoard(LEVELS[self.current_level_index].board)
         self.selected_cell: tuple[int, int] | None = None
         self.mistakes_remaining = MAX_MISTAKES
         self.animating = False
@@ -235,7 +236,7 @@ class ArrowEscapeApp:
 
         tk.Label(
             header,
-            text="第 1 关",
+            text=f"第 {self.current_level_index + 1} 关  ·  {LEVELS[self.current_level_index].name}",
             font=(FONT_FAMILY, 14, "bold"),
             fg=ACCENT,
             bg=ACCENT_SOFT,
@@ -341,10 +342,25 @@ class ArrowEscapeApp:
 
     def start_new_game(self) -> None:
         """从开始界面进入一个全新的游戏。"""
-        self.game.restart()
+        self.current_level_index = 0
+        self.game = ArrowBoard(LEVELS[self.current_level_index].board)
         self.selected_cell = None
         self.mistakes_remaining = MAX_MISTAKES
         self.show_game_screen()
+
+    def load_level(self, level_index: int) -> None:
+        """按索引加载关卡并恢复该关的初始状态。"""
+        if not 0 <= level_index < len(LEVELS):
+            raise IndexError("关卡索引越界")
+        if self.animating:
+            raise RuntimeError("动画进行中不能切换关卡")
+
+        self.current_level_index = level_index
+        self.game = ArrowBoard(LEVELS[level_index].board)
+        self.selected_cell = None
+        self.mistakes_remaining = MAX_MISTAKES
+        if self.current_screen == "game":
+            self.show_game_screen()
 
     def show_game_over(self) -> None:
         """显示失误机会耗尽后的失败界面。"""

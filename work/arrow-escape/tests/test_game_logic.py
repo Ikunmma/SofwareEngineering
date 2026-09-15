@@ -50,11 +50,18 @@ class ArrowBoardTest(unittest.TestCase):
     def test_restart_restores_independent_copy(self) -> None:
         board = ArrowBoard(STARTER_BOARD)
         original_count = board.remaining_arrows()
-        board.board[0][1] = None
+        arrow_row, arrow_col = next(
+            (row, col)
+            for row in range(board.rows)
+            for col in range(board.cols)
+            if board.board[row][col] is not None
+        )
+        original_direction = board.board[arrow_row][arrow_col]
+        board.board[arrow_row][arrow_col] = None
         self.assertEqual(board.remaining_arrows(), original_count - 1)
         board.restart()
         self.assertEqual(board.remaining_arrows(), original_count)
-        self.assertEqual(board.board[0][1], LEFT)
+        self.assertEqual(board.board[arrow_row][arrow_col], original_direction)
 
     def test_empty_cell_cannot_be_checked_as_arrow(self) -> None:
         board = ArrowBoard(((None,),))

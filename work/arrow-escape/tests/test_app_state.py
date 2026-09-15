@@ -60,13 +60,13 @@ class RestartStateTest(unittest.TestCase):
         self.app.on_board_click(SimpleNamespace(x=x, y=y))
 
     def test_restart_restores_board_mistakes_and_labels(self) -> None:
-        # 先消除第 1 行第 2 列向左的无阻挡箭头。
-        self.click_cell(0, 1)
+        # 先消除第 1 行第 3 列向上的无阻挡箭头。
+        self.click_cell(0, 2)
         self.wait_for_animation()
         self.assertEqual(self.app.game.remaining_arrows(), 12)
 
-        # 再点击第 1 行第 4 列被阻挡的向下箭头。
-        self.click_cell(0, 3)
+        # 再点击第 2 行第 3 列被阻挡的向左箭头。
+        self.click_cell(1, 2)
         self.wait_for_animation()
         self.assertEqual(self.app.mistakes_remaining, 2)
 
@@ -80,7 +80,7 @@ class RestartStateTest(unittest.TestCase):
         self.assertIn("棋盘已恢复", self.app.feedback_label.cget("text"))
 
     def test_restart_is_ignored_while_arrow_is_flying(self) -> None:
-        self.click_cell(0, 1)
+        self.click_cell(0, 2)
         self.assertTrue(self.app.animating)
 
         self.app.restart_board()
