@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pygame
 
+from advanced_levels import ADVANCED_LEVELS
+from advanced_logic import AdvancedBoard
 from game_logic import DIRECTION_VECTORS, ArrowBoard
 from levels import DOWN, LEFT, LEVELS, RIGHT, UP
 
@@ -51,6 +53,15 @@ DIRECTION_COLORS = {
     DOWN: ((226, 248, 237), GREEN, "Green", "s"),
     LEFT: ((255, 246, 218), (218, 145, 28), "Yellow", "w"),
     RIGHT: ((255, 229, 231), RED, "Red", "e"),
+}
+
+ADVANCED_COLORS = {
+    "purple": (176, 139, 255), "mint": (92, 216, 189),
+    "yellow": (255, 199, 49), "blue": (91, 181, 239),
+    "green": (126, 199, 49), "pink": (238, 128, 209),
+    "orange": (244, 166, 98), "lavender": (148, 142, 236),
+    "coral": (239, 126, 126), "cyan": (84, 207, 211),
+    "lime": (108, 217, 139),
 }
 
 
@@ -104,6 +115,7 @@ class ArrowEscapeApp:
         self.clock = pygame.time.Clock()
         self.running = False
         self.current_screen = "start"
+        self.selected_mode = "basic"
         self.current_level_index = 0
         self.game = ArrowBoard(LEVELS[0].board)
         self.mistakes_remaining = MAX_MISTAKES
@@ -111,6 +123,8 @@ class ArrowEscapeApp:
         self.animating = False
         self.animation: dict[str, object] | None = None
         self.help_visible = False
+        self.hint_cell: tuple[int, int] | None = None
+        self.hint_arrow_id: int | None = None
         self.feedback = "点击前方没有阻挡的箭头"
         self.feedback_kind = "normal"
         self.assets = self._load_assets()
@@ -120,6 +134,9 @@ class ArrowEscapeApp:
         self.start_button = Button(pygame.Rect(170, 610, 260, 66), "开始游戏", "Blue")
         self.help_button = Button(pygame.Rect(170, 692, 260, 60), "玩法说明", "Green")
         self.help_close_rect = pygame.Rect(468, 178, 48, 48)
+        self.mode_basic_rect = pygame.Rect(105, 526, 190, 52)
+        self.mode_advanced_rect = pygame.Rect(305, 526, 190, 52)
+        self.hint_rect = pygame.Rect(36, 684, 98, 88)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "主页", "Grey")
         self.next_button = Button(pygame.Rect(180, 620, 240, 64), "下一关", "Green")
@@ -238,6 +255,10 @@ class ArrowEscapeApp:
                 self.start_new_game()
             elif self.help_button.contains(pos):
                 self.help_visible = True
+            elif self.mode_basic_rect.collidepoint(pos):
+                self.selected_mode = "basic"
+            elif self.mode_advanced_rect.collidepoint(pos):
+                self.selected_mode = "advanced"
         elif self.current_screen == "game":
             if self.animating:
                 self.set_feedback("动画进行中，请稍等", "warning")
@@ -245,6 +266,8 @@ class ArrowEscapeApp:
                 self.restart_board()
             elif self.home_button.contains(pos):
                 self.show_start_screen()
+            elif self.hint_rect.collidepoint(pos):
+                self.show_hint()
             else:
                 self.on_board_click_pos(pos)
         elif self.current_screen == "level_clear" and self.next_button.contains(pos):
@@ -262,16 +285,24 @@ class ArrowEscapeApp:
         if kind == "collision" and float(self.animation["elapsed"]) >= COLLISION_DURATION:
             self._complete_collision()
         elif kind == "flight":
-            row = int(self.animation["row"])
-            col = int(self.animation["col"])
             direction = str(self.animation["direction"])
             elapsed = float(self.animation["elapsed"])
             row_step, col_step = DIRECTION_VECTORS[direction]
-            start_x, start_y = self.cell_center(row, col)
+            if "arrow_id" in self.animation:
+                arrow_id = int(self.animation["arrow_id"])
+                head_row, head_col = self.game.path(arrow_id).cells[-1]
+                start_x, start_y = self.cell_center(head_row, head_col)
+            else:
+                row = int(self.animation["row"])
+                col = int(self.animation["col"])
+                start_x, start_y = self.cell_center(row, col)
             x = start_x + col_step * FLIGHT_SPEED * elapsed
             y = start_y + row_step * FLIGHT_SPEED * elapsed
             if x < -80 or x > WINDOW_WIDTH + 80 or y < -80 or y > WINDOW_HEIGHT + 80:
-                self._complete_arrow_flight(row, col, direction)
+                if "arrow_id" in self.animation:
+                    self._complete_advanced_flight(arrow_id)
+                else:
+                    self._complete_arrow_flight(row, col, direction)
 
     def show_start_screen(self) -> None:
         if not self.animating:
@@ -280,9 +311,14 @@ class ArrowEscapeApp:
 
     def start_new_game(self) -> None:
         self.current_level_index = 0
-        self.game = ArrowBoard(LEVELS[0].board)
+        if self.selected_mode == "advanced":
+            self.game = AdvancedBoard(ADVANCED_LEVELS[0])
+        else:
+            self.game = ArrowBoard(LEVELS[0].board)
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
+        self.hint_cell = None
+        self.hint_arrow_id = None
         self.animating = False
         self.animation = None
         self.help_visible = False
@@ -295,9 +331,14 @@ class ArrowEscapeApp:
         if self.animating:
             raise RuntimeError("动画进行中不能切换关卡")
         self.current_level_index = level_index
-        self.game = ArrowBoard(LEVELS[level_index].board)
+        if self.selected_mode == "advanced":
+            self.game = AdvancedBoard(ADVANCED_LEVELS[level_index])
+        else:
+            self.game = ArrowBoard(LEVELS[level_index].board)
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
+        self.hint_cell = None
+        self.hint_arrow_id = None
         self.animation = None
         self.set_feedback("新关卡已加载，先观察再行动", "normal")
 
@@ -315,6 +356,8 @@ class ArrowEscapeApp:
         self.game.restart()
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
+        self.hint_cell = None
+        self.hint_arrow_id = None
         self.current_screen = "game"
         self.set_feedback("再试一次，这次先检查箭头前方", "normal")
 
@@ -325,6 +368,8 @@ class ArrowEscapeApp:
         self.game.restart()
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
+        self.hint_cell = None
+        self.hint_arrow_id = None
         self.set_feedback("棋盘和失误次数已恢复", "success")
 
     def show_level_clear(self) -> None:
@@ -336,18 +381,53 @@ class ArrowEscapeApp:
     def show_all_clear(self) -> None:
         self.current_screen = "all_clear"
 
-    @staticmethod
-    def cell_center(row: int, col: int) -> tuple[float, float]:
-        return (BOARD_LEFT + col * CELL_SIZE + CELL_SIZE / 2,
-                BOARD_TOP + row * CELL_SIZE + CELL_SIZE / 2)
+    def board_geometry(self) -> tuple[int, int, int, int, int]:
+        """根据关卡行列数返回左、上、格宽、棋盘宽和棋盘高。"""
+        if self.selected_mode == "advanced":
+            cell_size = min(500 // self.game.cols, 480 // self.game.rows)
+            width, height = self.game.cols * cell_size, self.game.rows * cell_size
+            return (WINDOW_WIDTH - width) // 2, 160 + (480 - height) // 2, cell_size, width, height
+        cell_size = min(82, 432 // max(self.game.rows, self.game.cols))
+        width = self.game.cols * cell_size
+        height = self.game.rows * cell_size
+        left = (WINDOW_WIDTH - width) // 2
+        top = 180 + (432 - height) // 2
+        return left, top, cell_size, width, height
 
-    @staticmethod
-    def canvas_to_cell(x: int, y: int) -> tuple[int, int] | None:
-        if not (BOARD_LEFT <= x < BOARD_LEFT + BOARD_SIZE):
+    def cell_center(self, row: int, col: int) -> tuple[float, float]:
+        left, top, cell_size, _width, _height = self.board_geometry()
+        return (left + col * cell_size + cell_size / 2,
+                top + row * cell_size + cell_size / 2)
+
+    def canvas_to_cell(self, x: int, y: int) -> tuple[int, int] | None:
+        left, top, cell_size, width, height = self.board_geometry()
+        if not (left <= x < left + width):
             return None
-        if not (BOARD_TOP <= y < BOARD_TOP + BOARD_SIZE):
+        if not (top <= y < top + height):
             return None
-        return (y - BOARD_TOP) // CELL_SIZE, (x - BOARD_LEFT) // CELL_SIZE
+        return (y - top) // cell_size, (x - left) // cell_size
+
+    def show_hint(self) -> None:
+        """高亮并说明一个当前可以安全消除的箭头。"""
+        if self.selected_mode == "advanced":
+            choices = self.game.removable_arrows()
+            if not choices:
+                self.set_feedback("当前没有可直接飞出的折线箭头", "danger")
+                return
+            self.hint_arrow_id = choices[0]
+            self.hint_cell = None
+            path = self.game.path(self.hint_arrow_id)
+            row, col = path.cells[-1]
+            self.set_feedback(f"提示：点击经过第 {row + 1} 行第 {col + 1} 列的高亮折线", "success")
+        else:
+            choices = self.game.removable_arrows()
+            if not choices:
+                self.set_feedback("当前没有可直接飞出的箭头", "danger")
+                return
+            self.hint_cell = choices[0]
+            self.hint_arrow_id = None
+            row, col = self.hint_cell
+            self.set_feedback(f"提示：点击第 {row + 1} 行第 {col + 1} 列的高亮箭头", "success")
 
     def on_board_click_pos(self, position: tuple[int, int]) -> None:
         if self.animating:
@@ -357,12 +437,16 @@ class ArrowEscapeApp:
         if cell is None:
             return
         row, col = cell
+        if self.selected_mode == "advanced":
+            self._on_advanced_click(row, col)
+            return
         direction = self.game.board[row][col]
         if direction is None:
             self.selected_cell = None
             self.set_feedback("这里是空格，换一支箭试试", "warning")
             return
         self.selected_cell = cell
+        self.hint_cell = None
         if self.game.is_blocked(row, col):
             self.mistakes_remaining -= 1
             self.animating = True
@@ -375,6 +459,29 @@ class ArrowEscapeApp:
                 "direction": direction, "elapsed": 0.0,
             }
             self.set_feedback(f"{DIRECTION_NAMES[direction]}箭头正在飞出棋盘", "success")
+
+    def _on_advanced_click(self, row: int, col: int) -> None:
+        arrow_id = self.game.arrow_at(row, col)
+        if arrow_id is None:
+            self.set_feedback("这里没有折线箭头", "warning")
+            return
+        path = self.game.path(arrow_id)
+        self.hint_arrow_id = None
+        if self.game.is_blocked(arrow_id):
+            self.mistakes_remaining -= 1
+            self.animating = True
+            self.animation = {
+                "kind": "collision", "arrow_id": arrow_id,
+                "direction": path.direction, "elapsed": 0.0,
+            }
+            self.set_feedback("碰撞！这条折线的出口方向仍有阻挡", "danger")
+        else:
+            self.animating = True
+            self.animation = {
+                "kind": "flight", "arrow_id": arrow_id,
+                "direction": path.direction, "elapsed": 0.0,
+            }
+            self.set_feedback("折线箭头正在飞出棋盘", "success")
 
     def _complete_collision(self) -> None:
         self.animating = False
@@ -400,6 +507,19 @@ class ArrowEscapeApp:
                 f"成功！第 {row + 1} 行第 {col + 1} 列箭头已飞出",
                 "success",
             )
+
+    def _complete_advanced_flight(self, arrow_id: int) -> None:
+        self.game.remove_arrow(arrow_id)
+        self.animating = False
+        self.animation = None
+        self.hint_arrow_id = None
+        if self.game.remaining_arrows() == 0:
+            if self.current_level_index == len(ADVANCED_LEVELS) - 1:
+                self.show_all_clear()
+            else:
+                self.show_level_clear()
+        else:
+            self.set_feedback("成功！整条折线箭头已经飞出", "success")
 
     def set_feedback(self, message: str, kind: str) -> None:
         self.feedback = message
@@ -507,7 +627,7 @@ class ArrowEscapeApp:
         self.draw_text("HOW TO PLAY", 300, 242, 11, BLUE, center=True, display=True)
 
         rules = (
-            ("1", BLUE, "选择箭头", "用鼠标点击棋盘中的任意箭头"),
+            ("1", BLUE, "选择箭头", "点击单格箭头，或点击彩色折线的任意位置"),
             ("2", GREEN, "检查路径", "前进方向直到边界之间不能有其他箭头"),
             ("3", YELLOW, "清空棋盘", "无阻挡时箭头飞出，清空全部箭头即可过关"),
             ("!", RED, "注意碰撞", "被阻挡会消耗一次机会，三次失误则挑战失败"),
@@ -561,6 +681,13 @@ class ArrowEscapeApp:
         self.screen.blit(self.home_background, (0, 0))
         self.draw_color_title()
         self.draw_animated_arrow()
+        pygame.draw.rect(self.screen, (218, 228, 244), (103, 524, 394, 56), border_radius=28)
+        selected_rect = self.mode_basic_rect if self.selected_mode == "basic" else self.mode_advanced_rect
+        pygame.draw.rect(self.screen, BLUE, selected_rect, border_radius=24)
+        basic_color = WHITE if self.selected_mode == "basic" else MUTED
+        advanced_color = WHITE if self.selected_mode == "advanced" else MUTED
+        self.draw_text("基础模式", self.mode_basic_rect.centerx, self.mode_basic_rect.centery, 16, basic_color, center=True, bold=True)
+        self.draw_text("进阶模式", self.mode_advanced_rect.centerx, self.mode_advanced_rect.centery, 16, advanced_color, center=True, bold=True)
         self.start_button.draw(self, mouse)
         pygame.draw.polygon(self.screen, WHITE, ((199, 629), (199, 657), (220, 643)))
         self.help_button.draw(self, mouse)
@@ -577,12 +704,18 @@ class ArrowEscapeApp:
     def draw_game_screen(self) -> None:
         mouse = pygame.mouse.get_pos()
         self.screen.fill((61, 64, 89))
+        glow = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (82, 110, 190, 28), (20, 300), 230)
+        pygame.draw.circle(glow, (50, 201, 177, 18), (590, 560), 240)
+        self.screen.blit(glow, (0, 0))
         pygame.draw.line(self.screen, (126, 135, 168), (0, 145), (WINDOW_WIDTH, 145), 2)
         self.restart_button.enabled = not self.animating
         self.home_button.enabled = not self.animating
         self.restart_button.draw(self, mouse)
         self.home_button.draw(self, mouse)
-        self.draw_text(f"关卡 {self.current_level_index + 1}", 300, 24, 28, WHITE, center=True, bold=True)
+        self.draw_text(f"关卡 {self.current_level_index + 1}", 300, 20, 27, WHITE, center=True, bold=True)
+        level_name = (ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS)[self.current_level_index].name
+        self.draw_text(level_name, 300, 50, 12, (180, 190, 220), center=True, bold=True)
         heart_x = 270
         for index in range(MAX_MISTAKES):
             color = (255, 81, 88) if index < self.mistakes_remaining else (93, 95, 119)
@@ -603,29 +736,39 @@ class ArrowEscapeApp:
             feedback_colors.get(self.feedback_kind, (216, 221, 238)), center=True, bold=True,
         )
         self.draw_text("提示", 84, 752, 16, WHITE, center=True, bold=True)
-        pygame.draw.circle(self.screen, (255, 193, 55), (84, 720), 22)
+        hint_color = (255, 211, 75) if self.hint_rect.collidepoint(mouse) else (255, 193, 55)
+        pygame.draw.circle(self.screen, hint_color, (84, 720), 24)
         self.draw_text("?", 84, 718, 25, WHITE, center=True, bold=True)
-        self.draw_text("观察同行同列", 300, 742, 13, (180, 188, 216), center=True)
-        self.draw_text("基础模式", 516, 752, 16, WHITE, center=True, bold=True)
+        helper_text = "点击整条彩色折线" if self.selected_mode == "advanced" else "观察同行同列"
+        self.draw_text(helper_text, 300, 742, 13, (180, 188, 216), center=True)
+        mode_name = "进阶模式" if self.selected_mode == "advanced" else "基础模式"
+        self.draw_text(mode_name, 516, 752, 16, WHITE, center=True, bold=True)
         pygame.draw.rect(self.screen, (45, 184, 189), (494, 699, 44, 44), width=4, border_radius=8)
         self.draw_text("#", 516, 719, 24, (74, 229, 213), center=True, bold=True)
 
     def draw_board(self) -> None:
+        left, top, cell_size, width, height = self.board_geometry()
         pygame.draw.rect(
             self.screen, (53, 56, 81),
-            (BOARD_LEFT - 10, BOARD_TOP - 10, BOARD_SIZE + 20, BOARD_SIZE + 20),
+            (left - 10, top - 10, width + 20, height + 20),
             border_radius=16,
         )
-        for row in range(BOARD_ROWS):
-            for col in range(BOARD_COLS):
-                cell = pygame.Rect(
-                    BOARD_LEFT + col * CELL_SIZE + 4,
-                    BOARD_TOP + row * CELL_SIZE + 4,
-                    CELL_SIZE - 8, CELL_SIZE - 8,
+        for row in range(self.game.rows if self.selected_mode == "basic" else 0):
+            for col in range(self.game.cols):
+                pygame.draw.circle(
+                    self.screen, (91, 96, 126),
+                    tuple(map(int, self.cell_center(row, col))), 3,
                 )
+
+        if self.selected_mode == "advanced":
+            self.draw_advanced_board(cell_size)
+            return
+
+        arrow_size = min(52, int(cell_size * 0.68))
+        for row in range(self.game.rows):
+            for col in range(self.game.cols):
                 direction = self.game.board[row][col]
                 if direction is None:
-                    pygame.draw.circle(self.screen, (91, 96, 126), cell.center, 3)
                     continue
                 if self.animation and self.animation["kind"] == "flight" and (row, col) == (
                     self.animation["row"], self.animation["col"]
@@ -638,9 +781,15 @@ class ArrowEscapeApp:
                     elapsed = float(self.animation["elapsed"])
                     offset = int(math.sin(elapsed * 72) * 8 * (1 - elapsed / COLLISION_DURATION))
                     center = (center[0] + offset, center[1])
-                    self.draw_arrow(direction, center, 48, collision=True)
+                    self.draw_arrow(direction, center, arrow_size, collision=True)
                 else:
-                    self.draw_arrow(direction, center, 48)
+                    self.draw_arrow(direction, center, arrow_size)
+                if self.hint_cell == (row, col):
+                    pulse = 4 + int((math.sin(pygame.time.get_ticks() / 180) + 1) * 2)
+                    pygame.draw.circle(
+                        self.screen, (255, 231, 108), tuple(map(int, center)),
+                        arrow_size // 2 + 11 + pulse, width=3,
+                    )
         if self.animation and self.animation["kind"] == "flight":
             row, col = int(self.animation["row"]), int(self.animation["col"])
             direction = str(self.animation["direction"])
@@ -650,8 +799,63 @@ class ArrowEscapeApp:
             self.draw_arrow(
                 direction,
                 (x + col_step * FLIGHT_SPEED * elapsed, y + row_step * FLIGHT_SPEED * elapsed),
-                48,
+                arrow_size,
             )
+
+    def draw_advanced_board(self, cell_size: int) -> None:
+        """绘制进阶模式的多格折线箭头。"""
+        for arrow_id in sorted(self.game.active_ids):
+            offset = (0.0, 0.0)
+            collision = False
+            if self.animation and self.animation.get("arrow_id") == arrow_id:
+                elapsed = float(self.animation["elapsed"])
+                if self.animation["kind"] == "flight":
+                    direction = str(self.animation["direction"])
+                    row_step, col_step = DIRECTION_VECTORS[direction]
+                    offset = (col_step * FLIGHT_SPEED * elapsed, row_step * FLIGHT_SPEED * elapsed)
+                else:
+                    shake = math.sin(elapsed * 72) * 8 * (1 - elapsed / COLLISION_DURATION)
+                    offset = (shake, 0.0)
+                    collision = True
+            self.draw_advanced_path(
+                arrow_id, cell_size, offset=offset, collision=collision,
+                hinted=self.hint_arrow_id == arrow_id,
+            )
+
+    def draw_advanced_path(
+        self, arrow_id: int, cell_size: int, *, offset: tuple[float, float],
+        collision: bool, hinted: bool,
+    ) -> None:
+        path = self.game.path(arrow_id)
+        color = RED if collision else ADVANCED_COLORS[path.color]
+        points = [
+            (int(self.cell_center(row, col)[0] + offset[0]),
+             int(self.cell_center(row, col)[1] + offset[1]))
+            for row, col in path.cells
+        ]
+        width = max(4, cell_size // 6)
+        shadow_points = [(x + 2, y + 3) for x, y in points]
+        if len(shadow_points) > 1:
+            pygame.draw.lines(self.screen, color, False, points, width)
+        for point in points[:-1]:
+            pygame.draw.circle(self.screen, color, point, width // 2)
+
+        row_step, col_step = DIRECTION_VECTORS[path.direction]
+        dx, dy = col_step, row_step
+        head_x, head_y = points[-1]
+        tip = (head_x + dx * cell_size // 3, head_y + dy * cell_size // 3)
+        base = (head_x - dx * cell_size // 8, head_y - dy * cell_size // 8)
+        perp = (-dy, dx)
+        arrowhead = (
+            tip,
+            (base[0] + perp[0] * cell_size // 5, base[1] + perp[1] * cell_size // 5),
+            (base[0] - perp[0] * cell_size // 5, base[1] - perp[1] * cell_size // 5),
+        )
+        pygame.draw.polygon(self.screen, (34, 35, 55), tuple((x + 2, y + 3) for x, y in arrowhead))
+        pygame.draw.polygon(self.screen, color, arrowhead)
+        if hinted:
+            pulse = 8 + int((math.sin(pygame.time.get_ticks() / 180) + 1) * 3)
+            pygame.draw.circle(self.screen, (255, 232, 103), (head_x, head_y), pulse, width=3)
 
     def draw_arrow(
         self, direction: str, center: tuple[float, float], size: int, *, collision: bool = False,
@@ -691,12 +895,14 @@ class ArrowEscapeApp:
         elif kind == "all_clear":
             circle_color, accent, icon_key = YELLOW_SOFT, YELLOW, "star_yellow"
             eyebrow, title = "ALL CLEAR", "全部通关！"
-            note = f"太棒了！你已完成全部 {len(LEVELS)} 个原创关卡"
+            level_count = len(ADVANCED_LEVELS) if self.selected_mode == "advanced" else len(LEVELS)
+            note = f"太棒了！你已完成全部 {level_count} 个原创关卡"
             button = self.replay_button
         else:
             circle_color, accent, icon_key = GREEN_SOFT, GREEN, "check"
             eyebrow, title = "LEVEL CLEAR", f"第 {self.current_level_index + 1} 关通关！"
-            note = f"你已清空“{LEVELS[self.current_level_index].name}”的所有箭头"
+            levels = ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
+            note = f"你已清空“{levels[self.current_level_index].name}”的所有箭头"
             button = self.next_button
 
         pygame.draw.circle(self.screen, circle_color, (300, 275), 78)

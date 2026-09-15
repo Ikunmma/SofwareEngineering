@@ -1,6 +1,7 @@
 """原创关卡数据与方向定义。"""
 
 from dataclasses import dataclass
+from random import Random
 
 UP = "up"
 DOWN = "down"
@@ -27,33 +28,35 @@ class Level:
     board: BoardData
 
 
-# 每个元素对应一个单元格，None 表示空格。
-LEVEL_1: BoardData = (
-    (None, None, UP, None, UP, None),
-    (None, UP, LEFT, None, None, None),
-    (None, LEFT, DOWN, LEFT, None, None),
-    (RIGHT, None, None, None, UP, UP),
-    (None, None, None, LEFT, None, LEFT),
-    (None, None, None, None, RIGHT, None),
-)
+def make_dense_board(rows: int, cols: int, seed: int) -> BoardData:
+    """随机剥离可见边缘格，并记录出射方向，得到可解的满格箭阵。
 
-LEVEL_2: BoardData = (
-    (None, LEFT, None, LEFT, RIGHT, None),
-    (UP, LEFT, RIGHT, None, None, None),
-    (UP, None, None, DOWN, None, LEFT),
-    (RIGHT, RIGHT, None, None, RIGHT, None),
-    (None, None, None, RIGHT, None, RIGHT),
-    (None, UP, None, DOWN, RIGHT, None),
-)
+    每一步随机挑选能从剩余格子中直接离开的方向，所以记录的
+    选择顺序可用于通关；固定种子使重新开始时布局保持一致。
+    """
+    rng = Random(seed)
+    board = [[None for _ in range(cols)] for _ in range(rows)]
+    remaining = {(r, c) for r in range(rows) for c in range(cols)}
+    vectors = {UP: (-1, 0), DOWN: (1, 0), LEFT: (0, -1), RIGHT: (0, 1)}
+    while remaining:
+        choices = []
+        for row, col in sorted(remaining):
+            for direction, (dr, dc) in vectors.items():
+                r, c = row + dr, col + dc
+                while 0 <= r < rows and 0 <= c < cols and (r, c) not in remaining:
+                    r, c = r + dr, c + dc
+                if not (0 <= r < rows and 0 <= c < cols):
+                    choices.append((row, col, direction))
+        row, col, direction = rng.choice(choices)
+        board[row][col] = direction
+        remaining.remove((row, col))
+    return tuple(tuple(row) for row in board)
 
-LEVEL_3: BoardData = (
-    (None, None, LEFT, None, RIGHT, UP),
-    (LEFT, LEFT, None, None, None, UP),
-    (None, None, LEFT, RIGHT, RIGHT, None),
-    (None, DOWN, LEFT, RIGHT, None, None),
-    (LEFT, None, None, LEFT, UP, UP),
-    (DOWN, None, RIGHT, DOWN, DOWN, UP),
-)
+
+# 三关依次为 5×5、6×6、7×7，均采用高密度满格布局。
+LEVEL_1: BoardData = make_dense_board(5, 5, 3)
+LEVEL_2: BoardData = make_dense_board(6, 6, 7)
+LEVEL_3: BoardData = make_dense_board(7, 7, 11)
 
 LEVELS = (
     Level("初识方向", LEVEL_1),

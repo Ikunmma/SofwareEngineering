@@ -16,6 +16,8 @@ if str(PROJECT_DIR) not in sys.path:
 import pygame  # noqa: E402
 
 import main  # noqa: E402
+from advanced_logic import AdvancedBoard  # noqa: E402
+from levels import LEVELS  # noqa: E402
 
 
 class PygameStateTest(unittest.TestCase):
@@ -35,6 +37,15 @@ class PygameStateTest(unittest.TestCase):
         elif self.app.animation:
             self.app.update(3.0)
 
+    def first_blocked_cell(self) -> tuple[int, int]:
+        removable = set(self.app.game.removable_arrows())
+        return next(
+            (row, col)
+            for row in range(self.app.game.rows)
+            for col in range(self.app.game.cols)
+            if self.app.game.board[row][col] is not None and (row, col) not in removable
+        )
+
     def test_start_page_can_enter_game(self) -> None:
         self.app.show_start_screen()
         event = pygame.event.Event(
@@ -42,7 +53,7 @@ class PygameStateTest(unittest.TestCase):
         )
         self.app.handle_event(event)
         self.assertEqual(self.app.current_screen, "game")
-        self.assertEqual(self.app.game.remaining_arrows(), 13)
+        self.assertEqual(self.app.game.remaining_arrows(), 25)
 
     def test_help_modal_opens_closes_and_blocks_start(self) -> None:
         self.app.show_start_screen()
@@ -64,34 +75,69 @@ class PygameStateTest(unittest.TestCase):
         self.app.handle_event(close_event)
         self.assertFalse(self.app.help_visible)
 
-    def test_restart_restores_board_and_mistakes(self) -> None:
-        self.click_cell(0, 2)
+    def test_mode_selector_starts_advanced_mode(self) -> None:
+        self.app.show_start_screen()
+        mode_event = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.mode_advanced_rect.center
+        )
+        self.app.handle_event(mode_event)
+        self.assertEqual(self.app.selected_mode, "advanced")
+        self.app.start_new_game()
+        self.assertIsInstance(self.app.game, AdvancedBoard)
+        self.assertEqual((self.app.game.rows, self.app.game.cols), (16, 12))
+
+    def test_advanced_path_click_flies_out_as_a_whole(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        arrow_id = self.app.game.removable_arrows()[0]
+        row, col = self.app.game.path(arrow_id).cells[0]
+        before = self.app.game.remaining_arrows()
+        self.click_cell(row, col)
+        self.assertEqual(self.app.animation["arrow_id"], arrow_id)
         self.finish_animation()
-        self.assertEqual(self.app.game.remaining_arrows(), 12)
-        self.click_cell(1, 2)
+        self.assertEqual(self.app.game.remaining_arrows(), before - 1)
+
+    def test_hint_selects_a_currently_removable_arrow(self) -> None:
+        self.app.show_hint()
+        self.assertIn(self.app.hint_cell, self.app.game.removable_arrows())
+        self.assertIn("提示", self.app.feedback)
+
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        self.app.show_hint()
+        self.assertIn(self.app.hint_arrow_id, self.app.game.removable_arrows())
+        self.assertIn("提示", self.app.feedback)
+
+    def test_restart_restores_board_and_mistakes(self) -> None:
+        initial_count = self.app.game.remaining_arrows()
+        self.click_cell(*self.app.game.removable_arrows()[0])
+        self.finish_animation()
+        self.assertEqual(self.app.game.remaining_arrows(), initial_count - 1)
+        self.click_cell(*self.first_blocked_cell())
         self.finish_animation()
         self.assertEqual(self.app.mistakes_remaining, 2)
         self.app.restart_board()
-        self.assertEqual(self.app.game.remaining_arrows(), 13)
+        self.assertEqual(self.app.game.remaining_arrows(), initial_count)
         self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
         self.assertIn("已恢复", self.app.feedback)
 
     def test_animation_locks_restart(self) -> None:
-        self.click_cell(0, 2)
+        self.click_cell(*self.app.game.removable_arrows()[0])
         self.assertTrue(self.app.animating)
         self.app.restart_board()
         self.assertTrue(self.app.animating)
         self.assertIn("动画结束", self.app.feedback)
 
     def test_three_collisions_open_failure_page(self) -> None:
+        blocked_cell = self.first_blocked_cell()
         for _ in range(3):
-            self.click_cell(1, 2)
+            self.click_cell(*blocked_cell)
             self.finish_animation()
         self.assertEqual(self.app.current_screen, "game_over")
         self.assertEqual(self.app.mistakes_remaining, 0)
         self.app.retry_after_failure()
         self.assertEqual(self.app.current_screen, "game")
-        self.assertEqual(self.app.game.remaining_arrows(), 13)
+        self.assertEqual(self.app.game.remaining_arrows(), 25)
         self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
 
     def test_clearing_last_arrow_opens_level_result(self) -> None:
@@ -103,7 +149,8 @@ class PygameStateTest(unittest.TestCase):
         self.app.advance_to_next_level()
         self.assertEqual(self.app.current_screen, "game")
         self.assertEqual(self.app.current_level_index, 1)
-        self.assertEqual(self.app.game.remaining_arrows(), 17)
+        expected = sum(cell is not None for row in LEVELS[1].board for cell in row)
+        self.assertEqual(self.app.game.remaining_arrows(), expected)
 
     def test_final_level_opens_all_clear(self) -> None:
         self.app.load_level(2)
@@ -119,6 +166,9 @@ class PygameStateTest(unittest.TestCase):
             self.app.current_screen = screen
             self.app.draw()
             self.assertEqual(self.app.screen.get_size(), (main.WINDOW_WIDTH, main.WINDOW_HEIGHT))
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        self.app.draw()
 
 
 if __name__ == "__main__":
