@@ -18,6 +18,12 @@ MINT = "#45C7A0"
 
 FONT_FAMILY = "Microsoft YaHei UI"
 
+BOARD_ROWS = 6
+BOARD_COLS = 6
+CELL_SIZE = 72
+BOARD_PADDING = 20
+BOARD_PIXEL_SIZE = BOARD_COLS * CELL_SIZE + BOARD_PADDING * 2
+
 
 class ArrowEscapeApp:
     """管理游戏窗口与页面切换。"""
@@ -26,6 +32,7 @@ class ArrowEscapeApp:
         self.root = root
         self.current_screen = ""
         self.start_button: tk.Button | None = None
+        self.board_canvas: tk.Canvas | None = None
         self.show_start_screen()
 
     def clear_screen(self) -> None:
@@ -122,7 +129,7 @@ class ArrowEscapeApp:
         self.start_button = self.make_button(
             button_host,
             "开始游戏  →",
-            self.show_game_placeholder,
+            self.show_game_screen,
             width=15,
         )
         self.start_button.pack()
@@ -170,33 +177,162 @@ class ArrowEscapeApp:
             font=(FONT_FAMILY, 10),
         )
 
-    def show_game_placeholder(self) -> None:
-        """验证开始按钮的页面切换，棋盘将在下一步实现。"""
+    def show_game_screen(self) -> None:
+        """显示游戏状态栏、棋盘和操作区。"""
         self.clear_screen()
         self.current_screen = "game"
 
-        frame = tk.Frame(self.root, bg=BACKGROUND)
-        frame.pack(fill="both", expand=True)
+        page = tk.Frame(self.root, bg=BACKGROUND)
+        page.pack(fill="both", expand=True)
+
+        header = tk.Frame(page, bg=BACKGROUND, height=90)
+        header.pack(fill="x", padx=58, pady=(30, 10))
+        header.pack_propagate(False)
+
         tk.Label(
-            frame,
-            text="已进入游戏",
-            font=(FONT_FAMILY, 28, "bold"),
+            header,
+            text="一箭又一箭",
+            font=(FONT_FAMILY, 24, "bold"),
             fg=TEXT_PRIMARY,
             bg=BACKGROUND,
-        ).pack(pady=(230, 18))
+        ).pack(side="left", anchor="center")
+
         tk.Label(
-            frame,
-            text="棋盘与箭头将在下一个功能中加入",
-            font=(FONT_FAMILY, 13),
+            header,
+            text="第 1 关",
+            font=(FONT_FAMILY, 14, "bold"),
+            fg=ACCENT,
+            bg=ACCENT_SOFT,
+            padx=22,
+            pady=10,
+        ).pack(side="right", anchor="center")
+
+        content = tk.Frame(page, bg=BACKGROUND)
+        content.pack(fill="both", expand=True, padx=58, pady=(0, 45))
+
+        board_panel = tk.Frame(content, bg=CARD, padx=24, pady=24)
+        board_panel.pack(side="left", fill="both", expand=True)
+
+        self.board_canvas = tk.Canvas(
+            board_panel,
+            width=BOARD_PIXEL_SIZE,
+            height=BOARD_PIXEL_SIZE,
+            bg="#F8FAFE",
+            highlightthickness=0,
+        )
+        self.board_canvas.pack(expand=True)
+        self.draw_empty_board()
+
+        sidebar = tk.Frame(content, width=240, bg=BACKGROUND)
+        sidebar.pack(side="right", fill="y", padx=(24, 0))
+        sidebar.pack_propagate(False)
+
+        tk.Label(
+            sidebar,
+            text="游戏状态",
+            font=(FONT_FAMILY, 16, "bold"),
+            fg=TEXT_PRIMARY,
+            bg=BACKGROUND,
+            anchor="w",
+        ).pack(fill="x", pady=(8, 14))
+
+        self._make_status_card(sidebar, "剩余箭头", "—", ACCENT)
+        self._make_status_card(sidebar, "剩余失误", "3", MINT)
+
+        tip = tk.Frame(sidebar, bg="#FFF8E8", padx=18, pady=16)
+        tip.pack(fill="x", pady=(8, 24))
+        tk.Label(
+            tip,
+            text="玩法提示",
+            font=(FONT_FAMILY, 11, "bold"),
+            fg="#9A6A16",
+            bg="#FFF8E8",
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            tip,
+            text="点击前方无阻挡的箭头\n就能让它飞出棋盘。",
+            font=(FONT_FAMILY, 10),
+            fg="#8A744D",
+            bg="#FFF8E8",
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(8, 0))
+
+        self.make_button(
+            sidebar,
+            "重新开始",
+            self.restart_board,
+            width=14,
+        ).pack(fill="x", pady=(0, 12))
+
+        tk.Button(
+            sidebar,
+            text="返回主页",
+            command=self.show_start_screen,
+            font=(FONT_FAMILY, 11),
             fg=TEXT_SECONDARY,
             bg=BACKGROUND,
-        ).pack(pady=(0, 30))
-        self.make_button(
-            frame,
-            "返回开始界面",
-            self.show_start_screen,
-            width=16,
+            activeforeground=ACCENT,
+            activebackground=BACKGROUND,
+            relief="flat",
+            bd=0,
+            cursor="hand2",
         ).pack()
+
+    @staticmethod
+    def _make_status_card(
+        parent: tk.Misc,
+        title: str,
+        value: str,
+        color: str,
+    ) -> None:
+        """创建一张棋盘侧边的状态卡片。"""
+        card = tk.Frame(parent, bg=CARD, padx=18, pady=14)
+        card.pack(fill="x", pady=(0, 12))
+        tk.Label(
+            card,
+            text=title,
+            font=(FONT_FAMILY, 10),
+            fg=TEXT_SECONDARY,
+            bg=CARD,
+            anchor="w",
+        ).pack(side="left")
+        tk.Label(
+            card,
+            text=value,
+            font=(FONT_FAMILY, 20, "bold"),
+            fg=color,
+            bg=CARD,
+        ).pack(side="right")
+
+    def draw_empty_board(self) -> None:
+        """绘制 6×6 网格，之后箭头将放置在这些单元格中。"""
+        if self.board_canvas is None:
+            return
+
+        self.board_canvas.delete("all")
+        for row in range(BOARD_ROWS):
+            for col in range(BOARD_COLS):
+                x1 = BOARD_PADDING + col * CELL_SIZE
+                y1 = BOARD_PADDING + row * CELL_SIZE
+                x2 = x1 + CELL_SIZE
+                y2 = y1 + CELL_SIZE
+                fill = "#F4F6FF" if (row + col) % 2 == 0 else "#FFFFFF"
+                self.board_canvas.create_rectangle(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    fill=fill,
+                    outline="#DDE2F1",
+                    width=1,
+                    tags=("cell", f"cell-{row}-{col}"),
+                )
+
+    def restart_board(self) -> None:
+        """将当前棋盘重新绘制为初始状态。"""
+        self.draw_empty_board()
 
 
 def create_window() -> tk.Tk:
