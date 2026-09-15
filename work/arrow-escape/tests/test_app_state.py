@@ -110,6 +110,18 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.current_level_index, 3)
         self.assertEqual((self.app.game.rows, self.app.game.cols), (22, 18))
 
+    def test_game_and_result_pages_can_return_to_level_map(self) -> None:
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.home_button.rect.center))
+        self.assertEqual(self.app.current_screen, "level_select")
+
+        for screen in ("level_clear", "game_over", "all_clear"):
+            self.app.current_screen = screen
+            self.app.handle_event(pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN, button=1,
+                pos=self.app.result_back_button.rect.center))
+            self.assertEqual(self.app.current_screen, "level_select")
+
     def test_advanced_path_click_flies_out_as_a_whole(self) -> None:
         self.app.selected_mode = "advanced"
         self.app.start_new_game()

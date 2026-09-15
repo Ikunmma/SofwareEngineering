@@ -153,10 +153,11 @@ class ArrowEscapeApp:
         self.level_back_button = Button(pygame.Rect(24, 38, 105, 48), "返回", "Grey")
         self.hint_rect = pygame.Rect(36, 684, 98, 88)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
-        self.home_button = Button(pygame.Rect(474, 48, 100, 52), "主页", "Grey")
-        self.next_button = Button(pygame.Rect(180, 620, 240, 64), "下一关", "Green")
-        self.retry_button = Button(pygame.Rect(180, 620, 240, 64), "重新挑战", "Red")
-        self.replay_button = Button(pygame.Rect(180, 620, 240, 64), "再玩一次", "Green")
+        self.home_button = Button(pygame.Rect(474, 48, 100, 52), "选关", "Grey")
+        self.next_button = Button(pygame.Rect(88, 620, 200, 60), "下一关", "Green")
+        self.retry_button = Button(pygame.Rect(88, 620, 200, 60), "重新挑战", "Red")
+        self.replay_button = Button(pygame.Rect(88, 620, 200, 60), "再玩一次", "Green")
+        self.result_back_button = Button(pygame.Rect(312, 620, 200, 60), "返回选关", "Grey")
         self.particles = self._make_particles()
 
     def _load_assets(self) -> dict[str, pygame.Surface]:
@@ -314,17 +315,20 @@ class ArrowEscapeApp:
             elif self.restart_button.contains(pos):
                 self.restart_board()
             elif self.home_button.contains(pos):
-                self.show_start_screen()
+                self.show_level_select()
             elif self.hint_rect.collidepoint(pos):
                 self.show_hint()
             else:
                 self.on_board_click_pos(pos)
-        elif self.current_screen == "level_clear" and self.next_button.contains(pos):
-            self.advance_to_next_level()
-        elif self.current_screen == "game_over" and self.retry_button.contains(pos):
-            self.retry_after_failure()
-        elif self.current_screen == "all_clear" and self.replay_button.contains(pos):
-            self.start_new_game()
+        elif self.current_screen in {"level_clear", "game_over", "all_clear"}:
+            if self.result_back_button.contains(pos):
+                self.show_level_select()
+            elif self.current_screen == "level_clear" and self.next_button.contains(pos):
+                self.advance_to_next_level()
+            elif self.current_screen == "game_over" and self.retry_button.contains(pos):
+                self.retry_after_failure()
+            elif self.current_screen == "all_clear" and self.replay_button.contains(pos):
+                self.start_new_game()
 
     def update(self, dt: float) -> None:
         if self.current_screen == "game":
@@ -360,6 +364,12 @@ class ArrowEscapeApp:
     def show_start_screen(self) -> None:
         if not self.animating:
             self.current_screen = "start"
+            self.help_visible = False
+
+    def show_level_select(self) -> None:
+        """返回当前模式的关卡地图。"""
+        if not self.animating:
+            self.current_screen = "level_select"
             self.help_visible = False
 
     def start_new_game(self) -> None:
@@ -1093,6 +1103,7 @@ class ArrowEscapeApp:
             300, 585, 13, NAVY, center=True, bold=True,
         )
         button.draw(self, mouse)
+        self.result_back_button.draw(self, mouse)
         self.draw_text("继续保持，下一支箭也会找到出口", 300, 705, 12, MUTED, center=True)
 
 
