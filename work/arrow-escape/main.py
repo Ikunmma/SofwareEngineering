@@ -110,13 +110,16 @@ class ArrowEscapeApp:
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
+        self.help_visible = False
         self.feedback = "点击前方没有阻挡的箭头"
         self.feedback_kind = "normal"
         self.assets = self._load_assets()
         self._font_cache: dict[tuple[int, bool, bool], pygame.font.Font] = {}
         self.background = self._make_background()
         self.home_background = self._make_home_background()
-        self.start_button = Button(pygame.Rect(170, 700, 260, 66), "开始游戏", "Blue")
+        self.start_button = Button(pygame.Rect(170, 610, 260, 66), "开始游戏", "Blue")
+        self.help_button = Button(pygame.Rect(170, 692, 260, 60), "玩法说明", "Green")
+        self.help_close_rect = pygame.Rect(468, 178, 48, 48)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "主页", "Grey")
         self.next_button = Button(pygame.Rect(180, 620, 240, 64), "下一关", "Green")
@@ -165,18 +168,13 @@ class ArrowEscapeApp:
 
     @staticmethod
     def _make_home_background() -> pygame.Surface:
-        """创建原创的夜空渐变首页背景。"""
+        """创建干净柔和的首页渐变背景。"""
         surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        top, bottom = (18, 25, 61), (49, 77, 135)
+        top, bottom = (242, 248, 255), (219, 235, 253)
         for y in range(WINDOW_HEIGHT):
             ratio = y / (WINDOW_HEIGHT - 1)
             color = tuple(int(a + (b - a) * ratio) for a, b in zip(top, bottom))
             pygame.draw.line(surface, color, (0, y), (WINDOW_WIDTH, y))
-        glow = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-        pygame.draw.circle(glow, (79, 112, 255, 55), (80, 120), 245)
-        pygame.draw.circle(glow, (46, 220, 181, 36), (560, 590), 260)
-        pygame.draw.circle(glow, (241, 97, 167, 28), (530, 80), 150)
-        surface.blit(glow, (0, 0))
         return surface
 
     @staticmethod
@@ -231,8 +229,15 @@ class ArrowEscapeApp:
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return
         pos = event.pos
-        if self.current_screen == "start" and self.start_button.contains(pos):
-            self.start_new_game()
+        if self.current_screen == "start":
+            if self.help_visible:
+                if self.help_close_rect.collidepoint(pos):
+                    self.help_visible = False
+                return
+            if self.start_button.contains(pos):
+                self.start_new_game()
+            elif self.help_button.contains(pos):
+                self.help_visible = True
         elif self.current_screen == "game":
             if self.animating:
                 self.set_feedback("动画进行中，请稍等", "warning")
@@ -271,6 +276,7 @@ class ArrowEscapeApp:
     def show_start_screen(self) -> None:
         if not self.animating:
             self.current_screen = "start"
+            self.help_visible = False
 
     def start_new_game(self) -> None:
         self.current_level_index = 0
@@ -279,6 +285,7 @@ class ArrowEscapeApp:
         self.selected_cell = None
         self.animating = False
         self.animation = None
+        self.help_visible = False
         self.current_screen = "game"
         self.set_feedback("观察方向，找到第一支能飞出的箭", "normal")
 
@@ -446,8 +453,76 @@ class ArrowEscapeApp:
         widths = [self.font(48, bold=True).size(char)[0] for char, _ in chars]
         x = (WINDOW_WIDTH - sum(widths) - 8 * (len(chars) - 1)) // 2
         for (char, color), width in zip(chars, widths):
-            self.draw_outlined_text(char, x, 128, 48, color, center=False)
+            self.draw_outlined_text(char, x, 96, 48, color, center=False)
             x += width + 8
+
+    def draw_animated_arrow(self) -> None:
+        """绘制会上下浮动、轻轻摆动和眨眼的原创箭头角色。"""
+        elapsed = pygame.time.get_ticks() / 1000.0
+        bob = int(math.sin(elapsed * 2.2) * 10)
+        angle = math.sin(elapsed * 1.5) * 3.0
+        blink = int(elapsed * 5) % 19 == 18
+
+        shadow = pygame.Surface((260, 80), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (45, 73, 128, 38), (28, 27, 204, 28))
+        self.screen.blit(shadow, shadow.get_rect(center=(300, 501)))
+
+        mascot = pygame.Surface((310, 250), pygame.SRCALPHA)
+        outline = ((36, 94), (178, 94), (178, 48), (280, 125),
+                   (178, 202), (178, 156), (36, 156))
+        body = ((47, 101), (184, 101), (184, 64), (264, 125),
+                (184, 186), (184, 149), (47, 149))
+        pygame.draw.polygon(mascot, (39, 71, 160), outline)
+        pygame.draw.polygon(mascot, (62, 164, 239), body)
+        pygame.draw.polygon(mascot, (104, 205, 255), (
+            (58, 106), (177, 106), (177, 77), (244, 126),
+            (177, 126), (177, 120), (58, 120),
+        ))
+
+        for eye_x in (119, 158):
+            if blink:
+                pygame.draw.line(mascot, (35, 43, 65), (eye_x - 11, 125), (eye_x + 11, 125), 5)
+            else:
+                pygame.draw.ellipse(mascot, WHITE, (eye_x - 15, 107, 30, 38))
+                pygame.draw.ellipse(mascot, (35, 43, 65), (eye_x - 5, 119, 11, 17))
+                pygame.draw.circle(mascot, WHITE, (eye_x - 1, 121), 3)
+        pygame.draw.arc(
+            mascot, (35, 67, 116), (126, 132, 28, 23),
+            math.pi + 0.2, math.tau - 0.2, 4,
+        )
+        pygame.draw.circle(mascot, (250, 125, 157, 150), (91, 143), 9)
+        pygame.draw.circle(mascot, (250, 125, 157, 150), (188, 143), 9)
+
+        rotated = pygame.transform.rotozoom(mascot, angle, 1.0)
+        self.screen.blit(rotated, rotated.get_rect(center=(300, 360 + bob)))
+
+    def draw_help_modal(self) -> None:
+        """绘制玩法说明弹窗。"""
+        veil = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        veil.fill((25, 38, 72, 145))
+        self.screen.blit(veil, (0, 0))
+        panel_rect = pygame.Rect(65, 155, 470, 510)
+        self.draw_panel(panel_rect, radius=30)
+        self.draw_text("玩法说明", 300, 205, 28, NAVY, center=True, bold=True)
+        self.draw_text("HOW TO PLAY", 300, 242, 11, BLUE, center=True, display=True)
+
+        rules = (
+            ("1", BLUE, "选择箭头", "用鼠标点击棋盘中的任意箭头"),
+            ("2", GREEN, "检查路径", "前进方向直到边界之间不能有其他箭头"),
+            ("3", YELLOW, "清空棋盘", "无阻挡时箭头飞出，清空全部箭头即可过关"),
+            ("!", RED, "注意碰撞", "被阻挡会消耗一次机会，三次失误则挑战失败"),
+        )
+        for index, (number, color, title, note) in enumerate(rules):
+            y = 293 + index * 78
+            pygame.draw.circle(self.screen, color, (112, y + 21), 21)
+            self.draw_text(number, 112, y + 21, 16, WHITE, center=True, bold=True)
+            self.draw_text(title, 151, y + 2, 17, NAVY, bold=True)
+            self.draw_text(note, 151, y + 31, 12, MUTED)
+
+        pygame.draw.circle(self.screen, (238, 242, 250), self.help_close_rect.center, 22)
+        pygame.draw.line(self.screen, MUTED, (482, 192), (502, 212), 4)
+        pygame.draw.line(self.screen, MUTED, (502, 192), (482, 212), 4)
+        self.draw_text("点击右上角关闭", 300, 626, 12, MUTED, center=True)
 
     def draw_mascot(self) -> None:
         """用原创几何图形绘制带表情的双向箭头吉祥物。"""
@@ -484,49 +559,13 @@ class ArrowEscapeApp:
     def draw_start_screen(self) -> None:
         mouse = pygame.mouse.get_pos()
         self.screen.blit(self.home_background, (0, 0))
-        for x, y, radius, color in self.particles[:24]:
-            pygame.draw.circle(self.screen, (*color, 105), (x, y), max(1, radius // 2))
-
-        pygame.draw.circle(self.screen, (80, 115, 235), (54, 52), 25)
-        logo_arrow = pygame.transform.smoothscale(self.assets["arrow_blue_e"], (34, 34))
-        self.screen.blit(logo_arrow, logo_arrow.get_rect(center=(54, 52)))
-        self.draw_text("ARROW LAB", 94, 36, 17, WHITE, display=True)
-        self.draw_text("原创方向解谜", 95, 61, 11, (169, 185, 226), bold=True)
-        pygame.draw.rect(self.screen, (255, 255, 255, 20), (472, 31, 102, 44), border_radius=22)
-        self.draw_text("3 LEVELS", 523, 53, 11, (207, 218, 246), center=True, display=True)
-
-        self.draw_text("一箭又一箭", 300, 128, 43, WHITE, center=True, bold=True)
-        self.draw_text("找到方向，也找到唯一的出口", 300, 180, 15, (177, 195, 235), center=True)
-
-        hero = pygame.Surface((488, 348), pygame.SRCALPHA)
-        pygame.draw.rect(hero, (11, 18, 49, 150), hero.get_rect(), border_radius=32)
-        pygame.draw.rect(hero, (134, 162, 235, 70), hero.get_rect(), width=1, border_radius=32)
-        self.screen.blit(hero, (56, 220))
-        self.draw_text("方向预演", 88, 246, 14, (177, 195, 235), bold=True)
-        self.draw_text("观察 · 判断 · 飞出", 370, 247, 11, (103, 129, 193), display=True)
-
-        for row in range(4):
-            for col in range(5):
-                pygame.draw.circle(self.screen, (86, 106, 156), (116 + col * 92, 310 + row * 66), 3)
-        demo_arrows = (
-            (0, 1, RIGHT), (0, 3, DOWN), (1, 0, UP), (1, 2, LEFT),
-            (1, 4, DOWN), (2, 1, LEFT), (2, 3, RIGHT), (3, 0, RIGHT),
-            (3, 2, UP), (3, 4, LEFT),
-        )
-        for row, col, direction in demo_arrows:
-            self.draw_arrow(direction, (116 + col * 92, 310 + row * 66), 44)
-
-        chips = (("看方向", BLUE), ("找出口", GREEN), ("清棋盘", YELLOW))
-        for index, (label, color) in enumerate(chips):
-            x = 94 + index * 158
-            pygame.draw.rect(self.screen, (*color, 45), (x, 594, 128, 40), border_radius=20)
-            pygame.draw.circle(self.screen, color, (x + 20, 614), 5)
-            self.draw_text(label, x + 66, 614, 13, WHITE, center=True, bold=True)
-
-        self.draw_text("第 1 关 · 初识方向", 300, 666, 17, (213, 223, 248), center=True, bold=True)
+        self.draw_color_title()
+        self.draw_animated_arrow()
         self.start_button.draw(self, mouse)
-        pygame.draw.polygon(self.screen, WHITE, ((199, 720), (199, 748), (220, 734)))
-        self.draw_text("鼠标点击操作  ·  每个关卡都有解", 300, 792, 12, (162, 181, 226), center=True)
+        pygame.draw.polygon(self.screen, WHITE, ((199, 629), (199, 657), (220, 643)))
+        self.help_button.draw(self, mouse)
+        if self.help_visible:
+            self.draw_help_modal()
 
     @staticmethod
     def draw_heart(surface: pygame.Surface, center: tuple[int, int], color: tuple[int, int, int]) -> None:

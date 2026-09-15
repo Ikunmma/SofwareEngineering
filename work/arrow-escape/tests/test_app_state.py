@@ -44,6 +44,26 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.current_screen, "game")
         self.assertEqual(self.app.game.remaining_arrows(), 13)
 
+    def test_help_modal_opens_closes_and_blocks_start(self) -> None:
+        self.app.show_start_screen()
+        open_event = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.help_button.rect.center
+        )
+        self.app.handle_event(open_event)
+        self.assertTrue(self.app.help_visible)
+
+        start_event = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.start_button.rect.center
+        )
+        self.app.handle_event(start_event)
+        self.assertEqual(self.app.current_screen, "start")
+
+        close_event = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.help_close_rect.center
+        )
+        self.app.handle_event(close_event)
+        self.assertFalse(self.app.help_visible)
+
     def test_restart_restores_board_and_mistakes(self) -> None:
         self.click_cell(0, 2)
         self.finish_animation()
