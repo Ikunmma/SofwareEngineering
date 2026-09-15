@@ -3,7 +3,7 @@
 import tkinter as tk
 from collections.abc import Callable
 
-from game_logic import ArrowBoard
+from game_logic import DIRECTION_VECTORS, ArrowBoard
 from levels import DIRECTION_SYMBOLS, STARTER_BOARD
 
 
@@ -40,6 +40,9 @@ BOARD_COLS = 6
 CELL_SIZE = 72
 BOARD_PADDING = 20
 BOARD_PIXEL_SIZE = BOARD_COLS * CELL_SIZE + BOARD_PADDING * 2
+FLIGHT_STEP = 20
+FLIGHT_DELAY_MS = 14
+FLIGHT_STEPS = (BOARD_PIXEL_SIZE + CELL_SIZE) // FLIGHT_STEP + 1
 
 
 class ArrowEscapeApp:
@@ -54,6 +57,7 @@ class ArrowEscapeApp:
         self.arrow_count_label: tk.Label | None = None
         self.game = ArrowBoard(STARTER_BOARD)
         self.selected_cell: tuple[int, int] | None = None
+        self.animating = False
         self.show_start_screen()
 
     def clear_screen(self) -> None:
@@ -88,6 +92,9 @@ class ArrowEscapeApp:
 
     def show_start_screen(self) -> None:
         """显示游戏标题、规则和开始按钮。"""
+        if self.animating:
+            self._show_feedback("请等待箭头飞出后再操作", "warning")
+            return
         self.clear_screen()
         self.current_screen = "start"
 
@@ -422,6 +429,10 @@ class ArrowEscapeApp:
 
     def on_board_click(self, event: tk.Event) -> None:
         """处理鼠标点击，高亮选中的箭头并显示方向。"""
+        if self.animating:
+            self._show_feedback("请等待箭头飞出后再点击", "warning")
+            return
+
         cell = self.canvas_to_cell(event.x, event.y)
         if cell is None:
             self._show_feedback("请点击棋盘内的箭头", "warning")
@@ -444,8 +455,51 @@ class ArrowEscapeApp:
             )
             return
 
+        self.draw_board()
+        self.animating = True
+        self._show_feedback(
+            f"{DIRECTION_NAMES[direction]}箭头正在飞出棋盘……",
+            "success",
+        )
+        self._animate_arrow_out(row, col, direction)
+
+    def _animate_arrow_out(
+        self,
+        row: int,
+        col: int,
+        direction: str,
+        step: int = 0,
+    ) -> None:
+        """沿箭头方向逐帧移动 Canvas 图形。"""
+        if self.board_canvas is None or not self.board_canvas.winfo_exists():
+            self.animating = False
+            return
+
+        row_step, col_step = DIRECTION_VECTORS[direction]
+        arrow_tag = f"arrow-{row}-{col}"
+        self.board_canvas.move(
+            arrow_tag,
+            col_step * FLIGHT_STEP,
+            row_step * FLIGHT_STEP,
+        )
+
+        if step + 1 >= FLIGHT_STEPS:
+            self.root.after(
+                FLIGHT_DELAY_MS,
+                lambda: self._complete_arrow_flight(row, col, direction),
+            )
+            return
+
+        self.root.after(
+            FLIGHT_DELAY_MS,
+            lambda: self._animate_arrow_out(row, col, direction, step + 1),
+        )
+
+    def _complete_arrow_flight(self, row: int, col: int, direction: str) -> None:
+        """动画结束后更新棋盘数据和界面状态。"""
         self.game.remove_arrow(row, col)
         self.selected_cell = None
+        self.animating = False
         self.draw_board()
         self._update_arrow_count()
         if self.game.remaining_arrows() == 0:
@@ -470,6 +524,9 @@ class ArrowEscapeApp:
 
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
+        if self.animating:
+            self._show_feedback("请等待箭头飞出后再重新开始", "warning")
+            return
         self.game.restart()
         self.selected_cell = None
         self.draw_board()
