@@ -3,7 +3,8 @@
 import tkinter as tk
 from collections.abc import Callable
 
-from levels import DIRECTION_SYMBOLS, STARTER_BOARD, copy_board
+from game_logic import ArrowBoard
+from levels import DIRECTION_SYMBOLS, STARTER_BOARD
 
 
 WINDOW_WIDTH = 960
@@ -50,7 +51,8 @@ class ArrowEscapeApp:
         self.start_button: tk.Button | None = None
         self.board_canvas: tk.Canvas | None = None
         self.feedback_label: tk.Label | None = None
-        self.board = copy_board(STARTER_BOARD)
+        self.arrow_count_label: tk.Label | None = None
+        self.game = ArrowBoard(STARTER_BOARD)
         self.selected_cell: tuple[int, int] | None = None
         self.show_start_screen()
 
@@ -257,8 +259,12 @@ class ArrowEscapeApp:
             anchor="w",
         ).pack(fill="x", pady=(8, 14))
 
-        arrow_count = sum(cell is not None for row in self.board for cell in row)
-        self._make_status_card(sidebar, "剩余箭头", str(arrow_count), ACCENT)
+        self.arrow_count_label = self._make_status_card(
+            sidebar,
+            "剩余箭头",
+            str(self.game.remaining_arrows()),
+            ACCENT,
+        )
         self._make_status_card(sidebar, "剩余失误", "3", MINT)
 
         tip = tk.Frame(sidebar, bg="#FFF8E8", padx=18, pady=16)
@@ -319,7 +325,7 @@ class ArrowEscapeApp:
         title: str,
         value: str,
         color: str,
-    ) -> None:
+    ) -> tk.Label:
         """创建一张棋盘侧边的状态卡片。"""
         card = tk.Frame(parent, bg=CARD, padx=18, pady=14)
         card.pack(fill="x", pady=(0, 12))
@@ -331,13 +337,15 @@ class ArrowEscapeApp:
             bg=CARD,
             anchor="w",
         ).pack(side="left")
-        tk.Label(
+        value_label = tk.Label(
             card,
             text=value,
             font=(FONT_FAMILY, 20, "bold"),
             fg=color,
             bg=CARD,
-        ).pack(side="right")
+        )
+        value_label.pack(side="right")
+        return value_label
 
     def draw_board(self) -> None:
         """绘制 6×6 网格与当前关卡中的所有箭头。"""
@@ -363,7 +371,7 @@ class ArrowEscapeApp:
                     tags=("cell", f"cell-{row}-{col}"),
                 )
 
-                direction = self.board[row][col]
+                direction = self.game.board[row][col]
                 if direction is not None:
                     self._draw_arrow(row, col, direction)
 
@@ -420,7 +428,7 @@ class ArrowEscapeApp:
             return
 
         row, col = cell
-        direction = self.board[row][col]
+        direction = self.game.board[row][col]
         if direction is None:
             self.selected_cell = None
             self.draw_board()
@@ -428,11 +436,25 @@ class ArrowEscapeApp:
             return
 
         self.selected_cell = cell
+        if self.game.is_blocked(row, col):
+            self.draw_board()
+            self._show_feedback(
+                f"第 {row + 1} 行第 {col + 1} 列的{DIRECTION_NAMES[direction]}箭头前方有阻挡",
+                "warning",
+            )
+            return
+
+        self.game.remove_arrow(row, col)
+        self.selected_cell = None
         self.draw_board()
-        self._show_feedback(
-            f"已选择第 {row + 1} 行第 {col + 1} 列，方向：{DIRECTION_NAMES[direction]}",
-            "success",
-        )
+        self._update_arrow_count()
+        if self.game.remaining_arrows() == 0:
+            self._show_feedback("棋盘已清空！", "success")
+        else:
+            self._show_feedback(
+                f"第 {row + 1} 行第 {col + 1} 列的{DIRECTION_NAMES[direction]}箭头已飞出",
+                "success",
+            )
 
     def _show_feedback(self, message: str, kind: str) -> None:
         """更新棋盘右侧的操作反馈文字。"""
@@ -441,11 +463,17 @@ class ArrowEscapeApp:
         color = MINT if kind == "success" else "#D58A22"
         self.feedback_label.config(text=message, fg=color)
 
+    def _update_arrow_count(self) -> None:
+        """使侧边栏数字与当前棋盘同步。"""
+        if self.arrow_count_label is not None:
+            self.arrow_count_label.config(text=str(self.game.remaining_arrows()))
+
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
-        self.board = copy_board(STARTER_BOARD)
+        self.game.restart()
         self.selected_cell = None
         self.draw_board()
+        self._update_arrow_count()
         self._show_feedback("棋盘已恢复，请重新选择箭头", "success")
 
 
