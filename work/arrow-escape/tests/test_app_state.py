@@ -115,6 +115,28 @@ class RestartStateTest(unittest.TestCase):
         self.assertEqual(self.app.arrow_count_label.cget("text"), "17")
         self.assertEqual(self.app.mistakes_label.cget("text"), "3")
 
+    def test_final_level_opens_all_clear_without_fourth_level(self) -> None:
+        self.app.load_level(2)
+        self.app.game.board = [[None] * self.app.game.cols for _ in range(self.app.game.rows)]
+        self.app.game.board[0][0] = "up"
+        self.app.draw_board()
+        self.app._update_arrow_count()
+
+        self.click_cell(0, 0)
+        self.wait_for_animation()
+
+        self.assertEqual(self.app.current_screen, "all_clear")
+        self.assertEqual(self.app.current_level_index, 2)
+        self.assertIsNotNone(self.app.replay_all_button)
+
+        self.app.replay_all_button.invoke()
+        self.root.update()
+
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertEqual(self.app.current_level_index, 0)
+        self.assertEqual(self.app.game.remaining_arrows(), 13)
+        self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
+
 
 if __name__ == "__main__":
     unittest.main()

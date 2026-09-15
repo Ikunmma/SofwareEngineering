@@ -63,6 +63,7 @@ class ArrowEscapeApp:
         self.mistakes_label: tk.Label | None = None
         self.retry_button: tk.Button | None = None
         self.next_level_button: tk.Button | None = None
+        self.replay_all_button: tk.Button | None = None
         self.current_level_index = 0
         self.game = ArrowBoard(LEVELS[self.current_level_index].board)
         self.selected_cell: tuple[int, int] | None = None
@@ -428,6 +429,75 @@ class ArrowEscapeApp:
         self.load_level(next_index)
         self.show_game_screen()
 
+    def show_all_clear(self) -> None:
+        """显示全部关卡完成后的最终结果。"""
+        self.clear_screen()
+        self.current_screen = "all_clear"
+
+        canvas = tk.Canvas(
+            self.root,
+            width=WINDOW_WIDTH,
+            height=WINDOW_HEIGHT,
+            bg=BACKGROUND,
+            highlightthickness=0,
+        )
+        canvas.pack(fill="both", expand=True)
+        canvas.create_oval(-130, 480, 270, 880, fill="#DDF7EF", outline="")
+        canvas.create_oval(740, -180, 1110, 190, fill="#FFF0CF", outline="")
+        canvas.create_rectangle(210, 80, 750, 640, fill=CARD, outline="")
+
+        canvas.create_text(
+            480,
+            170,
+            text="★  ★  ★",
+            fill="#F2B84B",
+            font=("Segoe UI Symbol", 34, "bold"),
+        )
+        canvas.create_text(
+            480,
+            270,
+            text="全部通关！",
+            fill=TEXT_PRIMARY,
+            font=(FONT_FAMILY, 32, "bold"),
+        )
+        canvas.create_text(
+            480,
+            325,
+            text=f"恭喜你完成了全部 {len(LEVELS)} 个关卡",
+            fill=TEXT_SECONDARY,
+            font=(FONT_FAMILY, 13),
+        )
+        canvas.create_text(
+            480,
+            370,
+            text="每一支箭都找到了自己的出路",
+            fill=MINT,
+            font=(FONT_FAMILY, 11, "bold"),
+        )
+
+        button_host = tk.Frame(canvas, bg=CARD)
+        canvas.create_window(480, 470, window=button_host)
+        self.replay_all_button = self.make_button(
+            button_host,
+            "再玩一次",
+            self.start_new_game,
+            width=14,
+        )
+        self.replay_all_button.pack()
+        tk.Button(
+            button_host,
+            text="返回主页",
+            command=self.show_start_screen,
+            font=(FONT_FAMILY, 11),
+            fg=TEXT_SECONDARY,
+            bg=CARD,
+            activeforeground=ACCENT,
+            activebackground=CARD,
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+        ).pack(pady=(14, 0))
+
     def show_game_over(self) -> None:
         """显示失误机会耗尽后的失败界面。"""
         self.clear_screen()
@@ -733,7 +803,10 @@ class ArrowEscapeApp:
         self.draw_board()
         self._update_arrow_count()
         if self.game.remaining_arrows() == 0:
-            self.show_level_clear()
+            if self.current_level_index == len(LEVELS) - 1:
+                self.show_all_clear()
+            else:
+                self.show_level_clear()
         else:
             self._show_feedback(
                 f"第 {row + 1} 行第 {col + 1} 列的{DIRECTION_NAMES[direction]}箭头已飞出",
