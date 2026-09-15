@@ -25,6 +25,13 @@ DIRECTION_COLORS = {
     "right": ("#FBE8F0", "#D9598C"),
 }
 
+DIRECTION_NAMES = {
+    "up": "上",
+    "down": "下",
+    "left": "左",
+    "right": "右",
+}
+
 FONT_FAMILY = "Microsoft YaHei UI"
 
 BOARD_ROWS = 6
@@ -42,7 +49,9 @@ class ArrowEscapeApp:
         self.current_screen = ""
         self.start_button: tk.Button | None = None
         self.board_canvas: tk.Canvas | None = None
+        self.feedback_label: tk.Label | None = None
         self.board = copy_board(STARTER_BOARD)
+        self.selected_cell: tuple[int, int] | None = None
         self.show_start_screen()
 
     def clear_screen(self) -> None:
@@ -229,8 +238,10 @@ class ArrowEscapeApp:
             height=BOARD_PIXEL_SIZE,
             bg="#F8FAFE",
             highlightthickness=0,
+            cursor="hand2",
         )
         self.board_canvas.pack(expand=True)
+        self.board_canvas.bind("<Button-1>", self.on_board_click)
         self.draw_board()
 
         sidebar = tk.Frame(content, width=240, bg=BACKGROUND)
@@ -269,6 +280,17 @@ class ArrowEscapeApp:
             justify="left",
             anchor="w",
         ).pack(fill="x", pady=(8, 0))
+
+        self.feedback_label = tk.Label(
+            sidebar,
+            text="请点击一个箭头",
+            font=(FONT_FAMILY, 10),
+            fg=TEXT_SECONDARY,
+            bg=BACKGROUND,
+            justify="center",
+            wraplength=210,
+        )
+        self.feedback_label.pack(fill="x", pady=(0, 18))
 
         self.make_button(
             sidebar,
@@ -356,13 +378,15 @@ class ArrowEscapeApp:
         tag = f"arrow-{row}-{col}"
 
         radius = 25
+        is_selected = self.selected_cell == (row, col)
         self.board_canvas.create_oval(
             center_x - radius,
             center_y - radius,
             center_x + radius,
             center_y + radius,
             fill=background_color,
-            outline="",
+            outline=ACCENT if is_selected else "",
+            width=3 if is_selected else 0,
             tags=("arrow", tag),
         )
         self.board_canvas.create_text(
@@ -374,10 +398,55 @@ class ArrowEscapeApp:
             tags=("arrow", tag),
         )
 
+    @staticmethod
+    def canvas_to_cell(x: int, y: int) -> tuple[int, int] | None:
+        """把 Canvas 坐标转换为棋盘行列，边框外返回 None。"""
+        board_right = BOARD_PADDING + BOARD_COLS * CELL_SIZE
+        board_bottom = BOARD_PADDING + BOARD_ROWS * CELL_SIZE
+        if not (BOARD_PADDING <= x < board_right):
+            return None
+        if not (BOARD_PADDING <= y < board_bottom):
+            return None
+
+        col = (x - BOARD_PADDING) // CELL_SIZE
+        row = (y - BOARD_PADDING) // CELL_SIZE
+        return int(row), int(col)
+
+    def on_board_click(self, event: tk.Event) -> None:
+        """处理鼠标点击，高亮选中的箭头并显示方向。"""
+        cell = self.canvas_to_cell(event.x, event.y)
+        if cell is None:
+            self._show_feedback("请点击棋盘内的箭头", "warning")
+            return
+
+        row, col = cell
+        direction = self.board[row][col]
+        if direction is None:
+            self.selected_cell = None
+            self.draw_board()
+            self._show_feedback("这个格子里没有箭头", "warning")
+            return
+
+        self.selected_cell = cell
+        self.draw_board()
+        self._show_feedback(
+            f"已选择第 {row + 1} 行第 {col + 1} 列，方向：{DIRECTION_NAMES[direction]}",
+            "success",
+        )
+
+    def _show_feedback(self, message: str, kind: str) -> None:
+        """更新棋盘右侧的操作反馈文字。"""
+        if self.feedback_label is None:
+            return
+        color = MINT if kind == "success" else "#D58A22"
+        self.feedback_label.config(text=message, fg=color)
+
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
         self.board = copy_board(STARTER_BOARD)
+        self.selected_cell = None
         self.draw_board()
+        self._show_feedback("棋盘已恢复，请重新选择箭头", "success")
 
 
 def create_window() -> tk.Tk:
