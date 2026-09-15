@@ -232,9 +232,23 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.earned_stars, 3)
         self.assertGreater(self.app.level_score, main.STARTING_SCORE + main.ARROW_SCORE)
         self.assertEqual(self.app.total_score, self.app.level_score)
+        self.assertEqual(self.app.level_records["basic"][0], 3)
         frozen_time = self.app.elapsed_time
         self.app.update(5.0)
         self.assertEqual(self.app.elapsed_time, frozen_time)
+
+    def test_level_map_keeps_best_stars_separately_for_each_mode(self) -> None:
+        self.app.earned_stars = 3
+        self.app.level_scored = False
+        self.app.finish_level_stats()
+        self.app.reset_level_stats()
+        self.app.mistakes_remaining = 1
+        self.app.elapsed_time = self.app.par_time * 2
+        self.app.finish_level_stats()
+        self.assertEqual(self.app.level_records["basic"][0], 3)
+        self.assertEqual(self.app.level_records["advanced"], {})
+        self.app.current_screen = "level_select"
+        self.app.draw()
 
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2

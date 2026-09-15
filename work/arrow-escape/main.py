@@ -129,6 +129,7 @@ class ArrowEscapeApp:
         self.earned_stars = 0
         self.par_time = 50.0
         self.level_scored = False
+        self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
@@ -450,6 +451,10 @@ class ArrowEscapeApp:
         else:
             self.earned_stars = 1
         self.total_score += self.level_score
+        records = self.level_records[self.selected_mode]
+        records[self.current_level_index] = max(
+            records.get(self.current_level_index, 0), self.earned_stars
+        )
         self.level_scored = True
 
     def retry_after_failure(self) -> None:
@@ -829,15 +834,31 @@ class ArrowEscapeApp:
             hovered = rect.collidepoint(mouse)
             x, y = self.level_node_centers[index]
             accent = accents[index]
+            best_stars = self.level_records[self.selected_mode].get(index, 0)
             radius = 38 if hovered else 34
             pygame.draw.circle(self.screen, (69, 82, 120, 40), (x + 3, y + 6), radius + 7)
             pygame.draw.circle(self.screen, WHITE, (x, y), radius + 7)
             pygame.draw.circle(self.screen, accent, (x, y), radius)
+            if best_stars:
+                pygame.draw.circle(self.screen, YELLOW, (x, y), radius + 8, width=4)
             self.draw_text(str(index + 1), x, y - 2, 24, WHITE, center=True, bold=True)
             label = pygame.Rect(x - 72, y + 41, 144, 33)
             pygame.draw.rect(self.screen, WHITE, label, border_radius=12)
             pygame.draw.rect(self.screen, (*accent,), label, width=2, border_radius=12)
             self.draw_text(f"第 {index + 1} 关 · {level.name}", x, y + 57, 13, NAVY, center=True, bold=True)
+            if best_stars:
+                # 绿色勾表示已通关，金色小牌显示本次运行中的最好星级。
+                badge_center = (x + 31, y - 29)
+                pygame.draw.circle(self.screen, WHITE, badge_center, 15)
+                pygame.draw.circle(self.screen, GREEN, badge_center, 12)
+                pygame.draw.line(self.screen, WHITE, (x + 25, y - 29), (x + 29, y - 24), 3)
+                pygame.draw.line(self.screen, WHITE, (x + 29, y - 24), (x + 37, y - 34), 3)
+                star_badge = pygame.Rect(x - 38, y - 53, 64, 23)
+                pygame.draw.rect(self.screen, (255, 247, 211), star_badge, border_radius=11)
+                pygame.draw.rect(self.screen, YELLOW, star_badge, width=2, border_radius=11)
+                star = pygame.transform.smoothscale(self.assets["star_yellow"], (17, 16))
+                self.screen.blit(star, (star_badge.x + 9, star_badge.y + 3))
+                self.draw_text(f"× {best_stars}", star_badge.x + 31, star_badge.y + 3, 12, NAVY, bold=True)
 
         self.level_back_button.draw(self, mouse)
 
