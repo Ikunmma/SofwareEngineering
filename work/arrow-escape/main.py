@@ -116,6 +116,7 @@ class ArrowEscapeApp:
         self.running = False
         self.current_screen = "start"
         self.selected_mode = "basic"
+        self.selected_level_index = 0
         self.current_level_index = 0
         self.game = ArrowBoard(LEVELS[0].board)
         self.mistakes_remaining = MAX_MISTAKES
@@ -134,8 +135,13 @@ class ArrowEscapeApp:
         self.start_button = Button(pygame.Rect(170, 610, 260, 66), "开始游戏", "Blue")
         self.help_button = Button(pygame.Rect(170, 692, 260, 60), "玩法说明", "Green")
         self.help_close_rect = pygame.Rect(468, 178, 48, 48)
-        self.mode_basic_rect = pygame.Rect(105, 526, 190, 52)
-        self.mode_advanced_rect = pygame.Rect(305, 526, 190, 52)
+        self.level_mode_basic_rect = pygame.Rect(105, 112, 190, 48)
+        self.level_mode_advanced_rect = pygame.Rect(305, 112, 190, 48)
+        self.level_node_centers = ((300, 660), (145, 555), (385, 465), (185, 350), (390, 235))
+        self.level_card_rects = tuple(
+            pygame.Rect(x - 58, y - 43, 116, 86) for x, y in self.level_node_centers
+        )
+        self.level_back_button = Button(pygame.Rect(24, 38, 105, 48), "返回", "Grey")
         self.hint_rect = pygame.Rect(36, 684, 98, 88)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "主页", "Grey")
@@ -224,6 +230,29 @@ class ArrowEscapeApp:
         self.screen.blit(image, rect)
         return rect
 
+    def draw_wrapped_text(
+        self, text: str, rect: pygame.Rect, size: int,
+        color: tuple[int, int, int], *, line_gap: int = 10,
+    ) -> None:
+        """按像素宽度自动换行，适合显示连续的中文说明文字。"""
+        font = self.font(size)
+        lines: list[str] = []
+        line = ""
+        for char in text:
+            candidate = line + char
+            if line and font.size(candidate)[0] > rect.width:
+                lines.append(line)
+                line = char
+            else:
+                line = candidate
+        if line:
+            lines.append(line)
+        y = rect.y
+        for line in lines:
+            image = font.render(line, True, color)
+            self.screen.blit(image, image.get_rect(midtop=(rect.centerx, y)))
+            y += font.get_linesize() + line_gap
+
     def draw_panel(self, rect: pygame.Rect, *, color: tuple[int, int, int] = WHITE, radius: int = 24) -> None:
         self.screen.blit(_rounded_panel(rect.size, SHADOW, radius), rect.move(0, 8))
         self.screen.blit(_rounded_panel(rect.size, color, radius), rect)
@@ -252,13 +281,24 @@ class ArrowEscapeApp:
                     self.help_visible = False
                 return
             if self.start_button.contains(pos):
-                self.start_new_game()
+                self.current_screen = "level_select"
             elif self.help_button.contains(pos):
                 self.help_visible = True
-            elif self.mode_basic_rect.collidepoint(pos):
+        elif self.current_screen == "level_select":
+            if self.level_back_button.contains(pos):
+                self.show_start_screen()
+            elif self.level_mode_basic_rect.collidepoint(pos):
                 self.selected_mode = "basic"
-            elif self.mode_advanced_rect.collidepoint(pos):
+                self.selected_level_index = 0
+            elif self.level_mode_advanced_rect.collidepoint(pos):
                 self.selected_mode = "advanced"
+                self.selected_level_index = 0
+            else:
+                for index, rect in enumerate(self.level_card_rects):
+                    if rect.collidepoint(pos):
+                        self.selected_level_index = index
+                        self.start_new_game()
+                        break
         elif self.current_screen == "game":
             if self.animating:
                 self.set_feedback("动画进行中，请稍等", "warning")
@@ -312,11 +352,12 @@ class ArrowEscapeApp:
             self.help_visible = False
 
     def start_new_game(self) -> None:
-        self.current_level_index = 0
+        self.current_level_index = self.selected_level_index
+        levels = self.levels_for_mode()
         if self.selected_mode == "advanced":
-            self.game = AdvancedBoard(ADVANCED_LEVELS[0])
+            self.game = AdvancedBoard(levels[self.current_level_index])
         else:
-            self.game = ArrowBoard(LEVELS[0].board)
+            self.game = ArrowBoard(levels[self.current_level_index].board)
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
         self.hint_cell = None
@@ -328,15 +369,17 @@ class ArrowEscapeApp:
         self.set_feedback("观察方向，找到第一支能飞出的箭", "normal")
 
     def load_level(self, level_index: int) -> None:
-        if not 0 <= level_index < len(LEVELS):
+        levels = self.levels_for_mode()
+        if not 0 <= level_index < len(levels):
             raise IndexError("关卡索引越界")
         if self.animating:
             raise RuntimeError("动画进行中不能切换关卡")
         self.current_level_index = level_index
+        self.selected_level_index = level_index
         if self.selected_mode == "advanced":
-            self.game = AdvancedBoard(ADVANCED_LEVELS[level_index])
+            self.game = AdvancedBoard(levels[level_index])
         else:
-            self.game = ArrowBoard(LEVELS[level_index].board)
+            self.game = ArrowBoard(levels[level_index].board)
         self.mistakes_remaining = MAX_MISTAKES
         self.selected_cell = None
         self.hint_cell = None
@@ -346,11 +389,15 @@ class ArrowEscapeApp:
 
     def advance_to_next_level(self) -> None:
         next_index = self.current_level_index + 1
-        if next_index >= len(LEVELS):
+        if next_index >= len(self.levels_for_mode()):
             self.show_all_clear()
             return
         self.load_level(next_index)
         self.current_screen = "game"
+
+    def levels_for_mode(self):
+        """返回当前模式对应的关卡集合。"""
+        return ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
 
     def retry_after_failure(self) -> None:
         self.animating = False
@@ -533,6 +580,8 @@ class ArrowEscapeApp:
         self.screen.blit(self.background, (0, 0))
         if self.current_screen == "start":
             self.draw_start_screen()
+        elif self.current_screen == "level_select":
+            self.draw_level_select_screen()
         elif self.current_screen == "game":
             self.draw_game_screen()
         elif self.current_screen in {"level_clear", "game_over", "all_clear"}:
@@ -625,28 +674,22 @@ class ArrowEscapeApp:
         veil = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         veil.fill((25, 38, 72, 145))
         self.screen.blit(veil, (0, 0))
-        panel_rect = pygame.Rect(65, 155, 470, 510)
+        panel_rect = pygame.Rect(65, 170, 470, 440)
         self.draw_panel(panel_rect, radius=30)
-        self.draw_text("玩法说明", 300, 205, 28, NAVY, center=True, bold=True)
-        self.draw_text("HOW TO PLAY", 300, 242, 11, BLUE, center=True, display=True)
-
-        rules = (
-            ("1", BLUE, "选择箭头", "点击单格箭头，或点击彩色折线的任意位置"),
-            ("2", GREEN, "检查路径", "前进方向直到边界之间不能有其他箭头"),
-            ("3", YELLOW, "清空棋盘", "无阻挡时箭头飞出，清空全部箭头即可过关"),
-            ("!", RED, "注意碰撞", "被阻挡会消耗一次机会，三次失误则挑战失败"),
+        self.draw_text("玩法说明", 300, 222, 28, NAVY, center=True, bold=True)
+        self.draw_text("HOW TO PLAY", 300, 257, 11, BLUE, center=True, display=True)
+        paragraph = (
+            "观察棋盘中箭头指向的方向。点击一支箭头后，如果它前方直到边界都没有"
+            "其他箭头，它就会沿路线飞出；如果前方被挡住，箭头会晃动并消耗一次"
+            "失误机会。清空棋盘即可通过当前关卡，三次失误后可以重新挑战。基础模式"
+            "使用单格箭头，进阶模式使用整条彩色折线，游戏中的提示按钮可以告诉你下一步。"
         )
-        for index, (number, color, title, note) in enumerate(rules):
-            y = 293 + index * 78
-            pygame.draw.circle(self.screen, color, (112, y + 21), 21)
-            self.draw_text(number, 112, y + 21, 16, WHITE, center=True, bold=True)
-            self.draw_text(title, 151, y + 2, 17, NAVY, bold=True)
-            self.draw_text(note, 151, y + 31, 12, MUTED)
+        self.draw_wrapped_text(paragraph, pygame.Rect(105, 302, 390, 220), 15, MUTED, line_gap=11)
 
         pygame.draw.circle(self.screen, (238, 242, 250), self.help_close_rect.center, 22)
         pygame.draw.line(self.screen, MUTED, (482, 192), (502, 212), 4)
         pygame.draw.line(self.screen, MUTED, (502, 192), (482, 212), 4)
-        self.draw_text("点击右上角关闭", 300, 626, 12, MUTED, center=True)
+        self.draw_text("点击右上角关闭", 300, 565, 12, MUTED, center=True)
 
     def draw_mascot(self) -> None:
         """用原创几何图形绘制带表情的双向箭头吉祥物。"""
@@ -685,18 +728,59 @@ class ArrowEscapeApp:
         self.screen.blit(self.home_background, (0, 0))
         self.draw_color_title()
         self.draw_animated_arrow()
-        pygame.draw.rect(self.screen, (218, 228, 244), (103, 524, 394, 56), border_radius=28)
-        selected_rect = self.mode_basic_rect if self.selected_mode == "basic" else self.mode_advanced_rect
-        pygame.draw.rect(self.screen, BLUE, selected_rect, border_radius=24)
-        basic_color = WHITE if self.selected_mode == "basic" else MUTED
-        advanced_color = WHITE if self.selected_mode == "advanced" else MUTED
-        self.draw_text("基础模式", self.mode_basic_rect.centerx, self.mode_basic_rect.centery, 16, basic_color, center=True, bold=True)
-        self.draw_text("进阶模式", self.mode_advanced_rect.centerx, self.mode_advanced_rect.centery, 16, advanced_color, center=True, bold=True)
+        self.start_button.text = "开始游戏"
         self.start_button.draw(self, mouse)
         pygame.draw.polygon(self.screen, WHITE, ((199, 629), (199, 657), (220, 643)))
         self.help_button.draw(self, mouse)
         if self.help_visible:
             self.draw_help_modal()
+
+    def draw_level_select_screen(self) -> None:
+        """绘制一条由下向上的冒险路线式关卡地图。"""
+        mouse = pygame.mouse.get_pos()
+        self.screen.blit(self.home_background, (0, 0))
+        # 原创的远山、云朵和路线，营造地图感。
+        scenery = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        for x, y, radius in ((70, 245, 95), (535, 310, 120), (80, 610, 115), (540, 650, 130)):
+            pygame.draw.circle(scenery, (106, 145, 206, 22), (x, y), radius)
+        pygame.draw.polygon(scenery, (73, 114, 177, 25), ((0, 530), (125, 390), (245, 560), (360, 405), (600, 590), (600, 820), (0, 820)))
+        self.screen.blit(scenery, (0, 0))
+        self.draw_text("冒险地图", 300, 55, 32, NAVY, center=True, bold=True)
+        self.draw_text("选择模式，沿着路线挑战关卡", 300, 84, 13, MUTED, center=True)
+
+        pygame.draw.rect(self.screen, (218, 228, 244), (103, 108, 394, 56), border_radius=28)
+        selected = self.level_mode_basic_rect if self.selected_mode == "basic" else self.level_mode_advanced_rect
+        pygame.draw.rect(self.screen, BLUE, selected, border_radius=22)
+        self.draw_text(
+            "基础模式", self.level_mode_basic_rect.centerx, self.level_mode_basic_rect.centery,
+            16, WHITE if self.selected_mode == "basic" else MUTED, center=True, bold=True,
+        )
+        self.draw_text(
+            "进阶模式", self.level_mode_advanced_rect.centerx, self.level_mode_advanced_rect.centery,
+            16, WHITE if self.selected_mode == "advanced" else MUTED, center=True, bold=True,
+        )
+
+        levels = self.levels_for_mode()
+        accents = (BLUE, GREEN, YELLOW, RED, (151, 102, 220))
+        route_points = [self.level_node_centers[index] for index in range(len(levels))]
+        if len(route_points) > 1:
+            pygame.draw.lines(self.screen, (135, 156, 196), False, route_points, 7)
+            pygame.draw.lines(self.screen, WHITE, False, route_points, 3)
+        for index, (level, rect) in enumerate(zip(levels, self.level_card_rects)):
+            hovered = rect.collidepoint(mouse)
+            x, y = self.level_node_centers[index]
+            accent = accents[index]
+            radius = 38 if hovered else 34
+            pygame.draw.circle(self.screen, (69, 82, 120, 40), (x + 3, y + 6), radius + 7)
+            pygame.draw.circle(self.screen, WHITE, (x, y), radius + 7)
+            pygame.draw.circle(self.screen, accent, (x, y), radius)
+            self.draw_text(str(index + 1), x, y - 2, 24, WHITE, center=True, bold=True)
+            label = pygame.Rect(x - 72, y + 41, 144, 33)
+            pygame.draw.rect(self.screen, WHITE, label, border_radius=12)
+            pygame.draw.rect(self.screen, (*accent,), label, width=2, border_radius=12)
+            self.draw_text(f"第 {index + 1} 关 · {level.name}", x, y + 57, 13, NAVY, center=True, bold=True)
+
+        self.level_back_button.draw(self, mouse)
 
     @staticmethod
     def draw_heart(surface: pygame.Surface, center: tuple[int, int], color: tuple[int, int, int]) -> None:

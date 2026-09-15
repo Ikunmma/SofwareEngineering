@@ -47,12 +47,16 @@ class PygameStateTest(unittest.TestCase):
             if self.app.game.board[row][col] is not None and (row, col) not in removable
         )
 
-    def test_start_page_can_enter_game(self) -> None:
+    def test_start_page_opens_level_map_then_enters_game(self) -> None:
         self.app.show_start_screen()
         event = pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.start_button.rect.center
         )
         self.app.handle_event(event)
+        self.assertEqual(self.app.current_screen, "level_select")
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_card_rects[0].center
+        ))
         self.assertEqual(self.app.current_screen, "game")
         self.assertEqual(self.app.game.remaining_arrows(), 25)
 
@@ -78,14 +82,33 @@ class PygameStateTest(unittest.TestCase):
 
     def test_mode_selector_starts_advanced_mode(self) -> None:
         self.app.show_start_screen()
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.start_button.rect.center
+        ))
         mode_event = pygame.event.Event(
-            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.mode_advanced_rect.center
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_mode_advanced_rect.center
         )
         self.app.handle_event(mode_event)
         self.assertEqual(self.app.selected_mode, "advanced")
-        self.app.start_new_game()
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_card_rects[0].center
+        ))
         self.assertIsInstance(self.app.game, AdvancedBoard)
         self.assertEqual((self.app.game.rows, self.app.game.cols), (16, 12))
+
+    def test_level_select_page_switches_mode_and_opens_chosen_level(self) -> None:
+        self.app.show_start_screen()
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.start_button.rect.center))
+        self.assertEqual(self.app.current_screen, "level_select")
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_mode_advanced_rect.center))
+        self.assertEqual(self.app.selected_mode, "advanced")
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_card_rects[3].center))
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertEqual(self.app.current_level_index, 3)
+        self.assertEqual((self.app.game.rows, self.app.game.cols), (22, 18))
 
     def test_advanced_path_click_flies_out_as_a_whole(self) -> None:
         self.app.selected_mode = "advanced"
@@ -197,7 +220,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.game.remaining_arrows(), expected)
 
     def test_final_level_opens_all_clear(self) -> None:
-        self.app.load_level(2)
+        self.app.load_level(len(LEVELS) - 1)
         self.app.current_screen = "game"
         self.app.game.board = [[None] * self.app.game.cols for _ in range(self.app.game.rows)]
         self.app.game.board[0][0] = "up"
@@ -206,7 +229,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.current_screen, "all_clear")
 
     def test_all_pages_can_be_rendered(self) -> None:
-        for screen in ("start", "game", "level_clear", "game_over", "all_clear"):
+        for screen in ("start", "level_select", "game", "level_clear", "game_over", "all_clear"):
             self.app.current_screen = screen
             self.app.draw()
             self.assertEqual(self.app.screen.get_size(), (main.WINDOW_WIDTH, main.WINDOW_HEIGHT))
