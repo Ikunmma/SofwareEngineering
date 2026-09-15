@@ -9,8 +9,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from game_logic import ArrowBoard  # noqa: E402
-from levels import DOWN, LEFT, RIGHT, STARTER_BOARD, UP  # noqa: E402
+from game_logic import ArrowBoard, solve  # noqa: E402
+from levels import DOWN, LEFT, LEVELS, RIGHT, STARTER_BOARD, UP  # noqa: E402
 
 
 class ArrowBoardTest(unittest.TestCase):
@@ -67,6 +67,41 @@ class ArrowBoardTest(unittest.TestCase):
         board = ArrowBoard(((None,),))
         with self.assertRaises(ValueError):
             board.is_blocked(0, 0)
+
+
+class SolverTest(unittest.TestCase):
+    def test_all_levels_have_executable_solution(self) -> None:
+        for level in LEVELS:
+            with self.subTest(level=level.name):
+                solution = solve(level.board)
+                self.assertIsNotNone(solution)
+
+                board = ArrowBoard(level.board)
+                self.assertEqual(len(solution), board.remaining_arrows())
+                for row, col in solution:
+                    self.assertFalse(board.is_blocked(row, col))
+                    self.assertTrue(board.remove_arrow(row, col))
+                self.assertEqual(board.remaining_arrows(), 0)
+
+    def test_unsolvable_cycle_returns_none(self) -> None:
+        self.assertIsNone(solve(((RIGHT, LEFT),)))
+
+    def test_empty_board_returns_empty_solution(self) -> None:
+        self.assertEqual(solve(((None, None), (None, None))), [])
+
+    def test_solver_does_not_modify_input_board(self) -> None:
+        board = [list(row) for row in STARTER_BOARD]
+        original = [row.copy() for row in board]
+        self.assertIsNotNone(solve(board))
+        self.assertEqual(board, original)
+
+    def test_solver_accepts_partially_cleared_board(self) -> None:
+        board = ArrowBoard(STARTER_BOARD)
+        first_move = board.removable_arrows()[0]
+        self.assertTrue(board.remove_arrow(*first_move))
+        solution = solve(board.board)
+        self.assertIsNotNone(solution)
+        self.assertEqual(len(solution), board.remaining_arrows())
 
 
 if __name__ == "__main__":

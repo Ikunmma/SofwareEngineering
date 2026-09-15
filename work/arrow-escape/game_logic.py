@@ -79,6 +79,54 @@ class ArrowBoard:
         """返回当前棋盘中的箭头数量。"""
         return sum(cell is not None for row in self.board for cell in row)
 
+    def removable_arrows(self) -> list[tuple[int, int]]:
+        """返回当前状态中所有前方无阻挡的箭头坐标。"""
+        result = []
+        for row in range(self.rows):
+            for col in range(self.cols):
+                if self.board[row][col] is not None and not self.is_blocked(row, col):
+                    result.append((row, col))
+        return result
+
     def restart(self) -> None:
         """使用初始数据的深拷贝恢复棋盘。"""
         self.board = [list(row) for row in self._initial_board]
+
+
+def solve(
+    board: Sequence[Sequence[str | None]],
+) -> list[tuple[int, int]] | None:
+    """使用深度优先搜索返回一条完整消除顺序。
+
+    返回值中的每个元素是 ``(行, 列)`` 坐标。空棋盘返回
+    空列表；无解棋盘返回 ``None``。搜索使用不可变元组作为
+    状态快照，不会修改调用者传入的棋盘。
+    """
+    initial_state = tuple(tuple(row) for row in board)
+    # 先借助 ArrowBoard 校验输入，也可以及时报告非法方向。
+    ArrowBoard(initial_state)
+    failed_states: set[tuple[tuple[str | None, ...], ...]] = set()
+
+    def search(
+        state: tuple[tuple[str | None, ...], ...],
+    ) -> tuple[tuple[int, int], ...] | None:
+        if state in failed_states:
+            return None
+
+        current = ArrowBoard(state)
+        if current.remaining_arrows() == 0:
+            return ()
+
+        for row, col in current.removable_arrows():
+            next_state = [list(state_row) for state_row in state]
+            next_state[row][col] = None
+            frozen_next_state = tuple(tuple(state_row) for state_row in next_state)
+            remaining_solution = search(frozen_next_state)
+            if remaining_solution is not None:
+                return ((row, col),) + remaining_solution
+
+        failed_states.add(state)
+        return None
+
+    solution = search(initial_state)
+    return None if solution is None else list(solution)
