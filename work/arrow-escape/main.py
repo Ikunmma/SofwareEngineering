@@ -3,6 +3,8 @@
 import tkinter as tk
 from collections.abc import Callable
 
+from levels import DIRECTION_SYMBOLS, STARTER_BOARD, copy_board
+
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 720
@@ -15,6 +17,13 @@ ACCENT = "#5B67F1"
 ACCENT_DARK = "#454FD2"
 ACCENT_SOFT = "#E9EBFF"
 MINT = "#45C7A0"
+
+DIRECTION_COLORS = {
+    "up": ("#E9EBFF", "#5662E9"),
+    "down": ("#E3F7F0", "#22A981"),
+    "left": ("#FFF0E7", "#E77A3C"),
+    "right": ("#FBE8F0", "#D9598C"),
+}
 
 FONT_FAMILY = "Microsoft YaHei UI"
 
@@ -33,6 +42,7 @@ class ArrowEscapeApp:
         self.current_screen = ""
         self.start_button: tk.Button | None = None
         self.board_canvas: tk.Canvas | None = None
+        self.board = copy_board(STARTER_BOARD)
         self.show_start_screen()
 
     def clear_screen(self) -> None:
@@ -221,7 +231,7 @@ class ArrowEscapeApp:
             highlightthickness=0,
         )
         self.board_canvas.pack(expand=True)
-        self.draw_empty_board()
+        self.draw_board()
 
         sidebar = tk.Frame(content, width=240, bg=BACKGROUND)
         sidebar.pack(side="right", fill="y", padx=(24, 0))
@@ -236,7 +246,8 @@ class ArrowEscapeApp:
             anchor="w",
         ).pack(fill="x", pady=(8, 14))
 
-        self._make_status_card(sidebar, "剩余箭头", "—", ACCENT)
+        arrow_count = sum(cell is not None for row in self.board for cell in row)
+        self._make_status_card(sidebar, "剩余箭头", str(arrow_count), ACCENT)
         self._make_status_card(sidebar, "剩余失误", "3", MINT)
 
         tip = tk.Frame(sidebar, bg="#FFF8E8", padx=18, pady=16)
@@ -306,8 +317,8 @@ class ArrowEscapeApp:
             bg=CARD,
         ).pack(side="right")
 
-    def draw_empty_board(self) -> None:
-        """绘制 6×6 网格，之后箭头将放置在这些单元格中。"""
+    def draw_board(self) -> None:
+        """绘制 6×6 网格与当前关卡中的所有箭头。"""
         if self.board_canvas is None:
             return
 
@@ -330,9 +341,43 @@ class ArrowEscapeApp:
                     tags=("cell", f"cell-{row}-{col}"),
                 )
 
+                direction = self.board[row][col]
+                if direction is not None:
+                    self._draw_arrow(row, col, direction)
+
+    def _draw_arrow(self, row: int, col: int, direction: str) -> None:
+        """在指定单元格中绘制带柔和色底的方向箭头。"""
+        if self.board_canvas is None:
+            return
+
+        center_x = BOARD_PADDING + col * CELL_SIZE + CELL_SIZE / 2
+        center_y = BOARD_PADDING + row * CELL_SIZE + CELL_SIZE / 2
+        background_color, arrow_color = DIRECTION_COLORS[direction]
+        tag = f"arrow-{row}-{col}"
+
+        radius = 25
+        self.board_canvas.create_oval(
+            center_x - radius,
+            center_y - radius,
+            center_x + radius,
+            center_y + radius,
+            fill=background_color,
+            outline="",
+            tags=("arrow", tag),
+        )
+        self.board_canvas.create_text(
+            center_x,
+            center_y - 1,
+            text=DIRECTION_SYMBOLS[direction],
+            fill=arrow_color,
+            font=("Segoe UI Symbol", 28, "bold"),
+            tags=("arrow", tag),
+        )
+
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
-        self.draw_empty_board()
+        self.board = copy_board(STARTER_BOARD)
+        self.draw_board()
 
 
 def create_window() -> tk.Tk:
