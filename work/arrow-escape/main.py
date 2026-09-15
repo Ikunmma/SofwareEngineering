@@ -43,6 +43,10 @@ BOARD_PIXEL_SIZE = BOARD_COLS * CELL_SIZE + BOARD_PADDING * 2
 FLIGHT_STEP = 20
 FLIGHT_DELAY_MS = 14
 FLIGHT_STEPS = (BOARD_PIXEL_SIZE + CELL_SIZE) // FLIGHT_STEP + 1
+COLLISION_DELAY_MS = 45
+COLLISION_OFFSETS = (-8, 8, -7, 7, -4, 4, 0)
+COLLISION_BACKGROUND = "#FFE4E4"
+COLLISION_COLOR = "#D83B3B"
 
 
 class ArrowEscapeApp:
@@ -93,7 +97,7 @@ class ArrowEscapeApp:
     def show_start_screen(self) -> None:
         """显示游戏标题、规则和开始按钮。"""
         if self.animating:
-            self._show_feedback("请等待箭头飞出后再操作", "warning")
+            self._show_feedback("请等待动画结束后再操作", "warning")
             return
         self.clear_screen()
         self.current_screen = "start"
@@ -402,7 +406,7 @@ class ArrowEscapeApp:
             fill=background_color,
             outline=ACCENT if is_selected else "",
             width=3 if is_selected else 0,
-            tags=("arrow", tag),
+            tags=("arrow", tag, f"arrow-bg-{row}-{col}"),
         )
         self.board_canvas.create_text(
             center_x,
@@ -410,7 +414,7 @@ class ArrowEscapeApp:
             text=DIRECTION_SYMBOLS[direction],
             fill=arrow_color,
             font=("Segoe UI Symbol", 28, "bold"),
-            tags=("arrow", tag),
+            tags=("arrow", tag, f"arrow-symbol-{row}-{col}"),
         )
 
     @staticmethod
@@ -430,7 +434,7 @@ class ArrowEscapeApp:
     def on_board_click(self, event: tk.Event) -> None:
         """处理鼠标点击，高亮选中的箭头并显示方向。"""
         if self.animating:
-            self._show_feedback("请等待箭头飞出后再点击", "warning")
+            self._show_feedback("请等待动画结束后再点击", "warning")
             return
 
         cell = self.canvas_to_cell(event.x, event.y)
@@ -449,10 +453,12 @@ class ArrowEscapeApp:
         self.selected_cell = cell
         if self.game.is_blocked(row, col):
             self.draw_board()
+            self.animating = True
             self._show_feedback(
-                f"第 {row + 1} 行第 {col + 1} 列的{DIRECTION_NAMES[direction]}箭头前方有阻挡",
+                f"碰撞！{DIRECTION_NAMES[direction]}箭头前方有阻挡",
                 "warning",
             )
+            self._animate_collision(row, col)
             return
 
         self.draw_board()
@@ -462,6 +468,58 @@ class ArrowEscapeApp:
             "success",
         )
         self._animate_arrow_out(row, col, direction)
+
+    def _animate_collision(
+        self,
+        row: int,
+        col: int,
+        step: int = 0,
+        previous_offset: int = 0,
+    ) -> None:
+        """让被阻挡的箭头变红并围绕原位置水平晃动。"""
+        if self.board_canvas is None or not self.board_canvas.winfo_exists():
+            self.animating = False
+            return
+
+        arrow_tag = f"arrow-{row}-{col}"
+        background_tag = f"arrow-bg-{row}-{col}"
+        symbol_tag = f"arrow-symbol-{row}-{col}"
+        target_offset = COLLISION_OFFSETS[step]
+        self.board_canvas.move(arrow_tag, target_offset - previous_offset, 0)
+        self.board_canvas.itemconfigure(
+            background_tag,
+            fill=COLLISION_BACKGROUND,
+            outline=COLLISION_COLOR,
+            width=3,
+        )
+        self.board_canvas.itemconfigure(symbol_tag, fill=COLLISION_COLOR)
+
+        if step + 1 >= len(COLLISION_OFFSETS):
+            self.root.after(
+                COLLISION_DELAY_MS,
+                lambda: self._complete_collision(row, col),
+            )
+            return
+
+        self.root.after(
+            COLLISION_DELAY_MS,
+            lambda: self._animate_collision(
+                row,
+                col,
+                step + 1,
+                target_offset,
+            ),
+        )
+
+    def _complete_collision(self, row: int, col: int) -> None:
+        """恢复碰撞箭头的颜色和位置，保持棋盘数据不变。"""
+        self.selected_cell = None
+        self.animating = False
+        self.draw_board()
+        self._show_feedback(
+            f"第 {row + 1} 行第 {col + 1} 列的箭头未能飞出",
+            "warning",
+        )
 
     def _animate_arrow_out(
         self,
@@ -525,7 +583,7 @@ class ArrowEscapeApp:
     def restart_board(self) -> None:
         """将当前棋盘重新绘制为初始状态。"""
         if self.animating:
-            self._show_feedback("请等待箭头飞出后再重新开始", "warning")
+            self._show_feedback("请等待动画结束后再重新开始", "warning")
             return
         self.game.restart()
         self.selected_cell = None
