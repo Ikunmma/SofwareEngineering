@@ -177,11 +177,12 @@ class ArrowEscapeApp:
         )
         self.level_back_button = Button(pygame.Rect(24, 38, 105, 48), "返回", "Grey")
         self.clear_progress_button = Button(pygame.Rect(438, 38, 138, 48), "清除进度", "Red")
-        self.random_challenge_button = Button(pygame.Rect(210, 752, 180, 48), "随机挑战", "Yellow")
+        self.random_challenge_button = Button(pygame.Rect(398, 688, 178, 58), "随机挑战", "Yellow")
         self.clear_confirm_button = Button(pygame.Rect(112, 480, 176, 56), "确认清除", "Red")
         self.clear_cancel_button = Button(pygame.Rect(312, 480, 176, 56), "取消", "Grey")
         self.hint_rect = pygame.Rect(36, 684, 98, 88)
         self.auto_solve_rect = pygame.Rect(232, 704, 136, 58)
+        self.mode_badge_rect = pygame.Rect(466, 684, 100, 88)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "选关", "Grey")
         self.mute_rect = pygame.Rect(416, 52, 46, 46)
@@ -1233,6 +1234,24 @@ class ArrowEscapeApp:
         if self.help_visible:
             self.draw_help_modal()
 
+    def draw_map_action_button(
+        self, button: Button, mouse: tuple[int, int], *,
+        fill: tuple[int, int, int], border: tuple[int, int, int],
+        text_color: tuple[int, int, int],
+    ) -> None:
+        """绘制与冒险地图一致的轻量扁平按钮。"""
+        hovered = button.rect.collidepoint(mouse)
+        rect = button.rect
+        shadow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (50, 67, 108, 28), shadow.get_rect(), border_radius=14)
+        self.screen.blit(shadow, rect.move(0, 4))
+        if hovered:
+            fill = tuple(min(255, channel + 7) for channel in fill)
+        pygame.draw.rect(self.screen, fill, rect, border_radius=14)
+        pygame.draw.rect(self.screen, border, rect, width=2, border_radius=14)
+        self.draw_text(button.text, rect.centerx, rect.centery, 16,
+                       text_color, center=True, bold=True)
+
     def draw_level_select_screen(self) -> None:
         """绘制一条由下向上的冒险路线式关卡地图。"""
         mouse = pygame.mouse.get_pos()
@@ -1259,7 +1278,7 @@ class ArrowEscapeApp:
         )
 
         levels = self.levels_for_mode()
-        accents = (BLUE, GREEN, YELLOW, RED, (151, 102, 220))
+        accents = (BLUE, (49, 181, 142), (66, 151, 213), (98, 119, 210), (151, 102, 220))
         route_points = [self.level_node_centers[index] for index in range(len(levels))]
         if len(route_points) > 1:
             pygame.draw.lines(self.screen, (135, 156, 196), False, route_points, 7)
@@ -1294,9 +1313,25 @@ class ArrowEscapeApp:
                 self.screen.blit(star, (star_badge.x + 9, star_badge.y + 3))
                 self.draw_text(f"× {best_stars}", star_badge.x + 31, star_badge.y + 3, 12, NAVY, bold=True)
 
-        self.level_back_button.draw(self, mouse)
-        self.clear_progress_button.draw(self, mouse)
-        self.random_challenge_button.draw(self, mouse)
+        self.draw_map_action_button(
+            self.level_back_button, mouse, fill=(246, 249, 255),
+            border=(174, 188, 216), text_color=NAVY,
+        )
+        self.draw_map_action_button(
+            self.clear_progress_button, mouse, fill=(255, 242, 244),
+            border=(234, 148, 157), text_color=(185, 68, 78),
+        )
+        self.draw_map_action_button(
+            self.random_challenge_button, mouse, fill=(235, 241, 255),
+            border=(111, 137, 225), text_color=NAVY,
+        )
+        # 随机挑战是主路线之外的支线入口，用骰子图标与普通关卡区分。
+        dice = pygame.Rect(self.random_challenge_button.rect.x + 12,
+                           self.random_challenge_button.rect.y + 15, 28, 28)
+        pygame.draw.rect(self.screen, WHITE, dice, border_radius=7)
+        pygame.draw.rect(self.screen, BLUE, dice, width=2, border_radius=7)
+        for dx, dy in ((8, 8), (20, 8), (14, 14), (8, 20), (20, 20)):
+            pygame.draw.circle(self.screen, BLUE, (dice.x + dx, dice.y + dy), 2)
         if self.progress_notice:
             notice_color = GREEN if "已清除" in self.progress_notice else RED
             self.draw_text(self.progress_notice, 300, 184, 13, notice_color, center=True, bold=True)
@@ -1347,6 +1382,20 @@ class ArrowEscapeApp:
             pygame.draw.line(self.screen, (255, 116, 124), (x + 6, y - 8), (x + 18, y + 8), 4)
             pygame.draw.line(self.screen, (255, 116, 124), (x + 18, y - 8), (x + 6, y + 8), 4)
 
+    def draw_game_action_button(self, button: Button, mouse: tuple[int, int]) -> None:
+        """绘制与深色游戏页一致的顶部操作按钮。"""
+        if not button.enabled:
+            fill, border, text_color = (64, 67, 87), (88, 93, 119), (139, 144, 169)
+        elif button.rect.collidepoint(mouse):
+            fill, border, text_color = (83, 94, 132), (135, 201, 239), WHITE
+        else:
+            fill, border, text_color = (69, 75, 104), (112, 123, 159), WHITE
+        pygame.draw.rect(self.screen, (39, 42, 62), button.rect.move(0, 4), border_radius=13)
+        pygame.draw.rect(self.screen, fill, button.rect, border_radius=13)
+        pygame.draw.rect(self.screen, border, button.rect, width=2, border_radius=13)
+        self.draw_text(button.text, button.rect.centerx, button.rect.centery,
+                       17, text_color, center=True, bold=True)
+
     def draw_game_screen(self) -> None:
         mouse = pygame.mouse.get_pos()
         self.screen.fill((61, 64, 89))
@@ -1358,8 +1407,8 @@ class ArrowEscapeApp:
         controls_enabled = not self.animating and (not self.auto_solving or self.auto_paused)
         self.restart_button.enabled = controls_enabled
         self.home_button.enabled = controls_enabled
-        self.restart_button.draw(self, mouse)
-        self.home_button.draw(self, mouse)
+        self.draw_game_action_button(self.restart_button, mouse)
+        self.draw_game_action_button(self.home_button, mouse)
         self.draw_sound_button(mouse)
         title = "随机挑战" if self.is_random_challenge else f"关卡 {self.current_level_index + 1}"
         self.draw_text(title, 300, 20, 27, WHITE, center=True, bold=True)
@@ -1391,13 +1440,17 @@ class ArrowEscapeApp:
             self.feedback, 300, 690, 14,
             feedback_colors.get(self.feedback_kind, (216, 221, 238)), center=True, bold=True,
         )
-        self.draw_text(f"提示 ×{self.hints_remaining}", 84, 752, 16, WHITE, center=True, bold=True)
+        hint_panel = (67, 72, 99) if self.hints_remaining > 0 else (60, 63, 82)
+        pygame.draw.rect(self.screen, (39, 42, 62), self.hint_rect.move(0, 4), border_radius=18)
+        pygame.draw.rect(self.screen, hint_panel, self.hint_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (105, 115, 151), self.hint_rect, width=2, border_radius=18)
+        self.draw_text(f"提示 ×{self.hints_remaining}", 84, 752, 15, WHITE, center=True, bold=True)
         if self.hints_remaining <= 0:
             hint_color = (103, 106, 126)
         else:
             hint_color = (255, 211, 75) if self.hint_rect.collidepoint(mouse) else (255, 193, 55)
-        pygame.draw.circle(self.screen, hint_color, (84, 720), 24)
-        self.draw_text("?", 84, 718, 25, WHITE, center=True, bold=True)
+        pygame.draw.circle(self.screen, hint_color, (84, 718), 20)
+        self.draw_text("?", 84, 716, 21, WHITE, center=True, bold=True)
         ai_enabled = not self.animating and not self.auto_solving
         if self.auto_paused:
             ai_color = (218, 145, 28)
@@ -1405,8 +1458,9 @@ class ArrowEscapeApp:
             ai_color = (51, 181, 122)
         else:
             ai_color = (76, 111, 225) if ai_enabled else (91, 95, 119)
+        pygame.draw.rect(self.screen, (39, 42, 62), self.auto_solve_rect.move(0, 4), border_radius=14)
         pygame.draw.rect(self.screen, ai_color, self.auto_solve_rect, border_radius=14)
-        pygame.draw.rect(self.screen, (135, 201, 239), self.auto_solve_rect, width=2, border_radius=14)
+        pygame.draw.rect(self.screen, (122, 147, 208), self.auto_solve_rect, width=2, border_radius=14)
         if self.auto_paused:
             ai_text = "继续求解"
         elif self.auto_solving:
@@ -1417,9 +1471,13 @@ class ArrowEscapeApp:
         self.draw_text(ai_text, self.auto_solve_rect.centerx, self.auto_solve_rect.centery,
                        16, WHITE, center=True, bold=True)
         mode_name = "进阶模式" if self.selected_mode == "advanced" else "基础模式"
-        self.draw_text(mode_name, 516, 752, 16, WHITE, center=True, bold=True)
-        pygame.draw.rect(self.screen, (45, 184, 189), (494, 699, 44, 44), width=4, border_radius=8)
-        self.draw_text("#", 516, 719, 24, (74, 229, 213), center=True, bold=True)
+        pygame.draw.rect(self.screen, (39, 42, 62), self.mode_badge_rect.move(0, 4), border_radius=18)
+        pygame.draw.rect(self.screen, (67, 72, 99), self.mode_badge_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (105, 115, 151), self.mode_badge_rect, width=2, border_radius=18)
+        self.draw_text(mode_name, self.mode_badge_rect.centerx, 752, 15,
+                       WHITE, center=True, bold=True)
+        pygame.draw.rect(self.screen, (74, 229, 213), (499, 700, 34, 34), width=3, border_radius=8)
+        self.draw_text("#", 516, 716, 20, (74, 229, 213), center=True, bold=True)
 
     def draw_board(self) -> None:
         left, top, cell_size, width, height = self.board_geometry()
@@ -1601,37 +1659,54 @@ class ArrowEscapeApp:
 
     def draw_result_screen(self, kind: str) -> None:
         mouse = pygame.mouse.get_pos()
-        self.draw_arrow_pattern()
+        self.screen.fill((55, 59, 84))
+        atmosphere = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(atmosphere, (86, 111, 179, 35), (90, 130), 250)
+        pygame.draw.circle(atmosphere, (72, 180, 177, 18), (550, 680), 270)
+        for row, y in enumerate(range(35, WINDOW_HEIGHT, 100)):
+            for col, x in enumerate(range(35, WINDOW_WIDTH, 110)):
+                if (row + col) % 2:
+                    continue
+                pygame.draw.polygon(atmosphere, (170, 188, 228, 18),
+                                    ((x, y - 12), (x + 11, y + 2), (x + 4, y + 2),
+                                     (x + 4, y + 16), (x - 4, y + 16),
+                                     (x - 4, y + 2), (x - 11, y + 2)))
+        self.screen.blit(atmosphere, (0, 0))
         for x, y, radius, color in self.particles:
             pygame.draw.circle(self.screen, color, (x, y), radius)
-        self.draw_panel(pygame.Rect(70, 125, 460, 610), radius=34)
+        panel = pygame.Rect(70, 125, 460, 610)
+        pygame.draw.rect(self.screen, (36, 39, 60), panel.move(0, 9), border_radius=32)
+        pygame.draw.rect(self.screen, (65, 70, 99), panel, border_radius=32)
+        pygame.draw.rect(self.screen, (110, 122, 161), panel, width=2, border_radius=32)
 
         if kind == "game_over":
-            circle_color, accent, icon_key = RED_SOFT, RED, "cross"
+            circle_color, accent, icon_key = (91, 64, 81), (255, 119, 132), "cross"
             eyebrow, title = "TRY AGAIN", "本关挑战失败"
             note = "失误机会已经耗尽，观察路线后再试一次"
             button = self.retry_button
         elif kind == "random_clear":
-            circle_color, accent, icon_key = GREEN_SOFT, GREEN, "check"
+            circle_color, accent, icon_key = (59, 104, 101), (105, 226, 182), "check"
             eyebrow, title = "RANDOM CLEAR", "随机挑战成功！"
             note = f"种子 {self.random_seed} 的箭阵已全部清空"
             self.replay_button.text = "再来一局"
             button = self.replay_button
         elif kind == "all_clear":
-            circle_color, accent, icon_key = YELLOW_SOFT, YELLOW, "star_yellow"
+            circle_color, accent, icon_key = (112, 96, 69), (255, 207, 105), "star_yellow"
             eyebrow, title = "ALL CLEAR", "全部通关！"
             level_count = len(ADVANCED_LEVELS) if self.selected_mode == "advanced" else len(LEVELS)
             note = f"太棒了！你已完成全部 {level_count} 个原创关卡"
             self.replay_button.text = "再玩一次"
             button = self.replay_button
         else:
-            circle_color, accent, icon_key = GREEN_SOFT, GREEN, "check"
+            circle_color, accent, icon_key = (59, 104, 101), (105, 226, 182), "check"
             eyebrow, title = "LEVEL CLEAR", f"第 {self.current_level_index + 1} 关通关！"
             levels = ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
             note = f"你已清空“{levels[self.current_level_index].name}”的所有箭头"
             button = self.next_button
 
+        pygame.draw.circle(self.screen, (*accent, 35), (300, 275), 90, width=3)
         pygame.draw.circle(self.screen, circle_color, (300, 275), 78)
+        pygame.draw.circle(self.screen, accent, (300, 275), 78, width=2)
         if icon_key == "check":
             pygame.draw.line(self.screen, accent, (265, 275), (289, 298), 14)
             pygame.draw.line(self.screen, accent, (289, 298), (335, 249), 14)
@@ -1646,22 +1721,39 @@ class ArrowEscapeApp:
             icon = pygame.transform.smoothscale(self.assets[icon_key], (72, 68))
             self.screen.blit(icon, icon.get_rect(center=(300, 271)))
         self.draw_text(eyebrow, 300, 385, 15, accent, center=True, display=True)
-        self.draw_text(title, 300, 435, 31, NAVY, center=True, bold=True)
-        self.draw_text(note, 300, 487, 14, MUTED, center=True)
+        self.draw_text(title, 300, 435, 31, WHITE, center=True, bold=True)
+        self.draw_text(note, 300, 487, 14, (192, 202, 224), center=True)
         if kind != "game_over":
             for index in range(3):
                 key = "star_yellow" if index < self.earned_stars else "star_grey"
                 star = pygame.transform.smoothscale(self.assets[key], (48, 45))
                 self.screen.blit(star, star.get_rect(center=(250 + index * 50, 540)))
         else:
-            self.draw_text("本次未获得星星", 300, 540, 14, RED, center=True, bold=True)
+            self.draw_text("本次未获得星星", 300, 540, 14, accent, center=True, bold=True)
         self.draw_text(
             f"用时 {self.format_time(self.elapsed_time)}   ·   本关 {self.level_score} 分   ·   累计 {self.total_score} 分",
-            300, 585, 13, NAVY, center=True, bold=True,
+            300, 585, 13, (220, 227, 243), center=True, bold=True,
         )
-        button.draw(self, mouse)
-        self.result_back_button.draw(self, mouse)
-        self.draw_text("继续保持，下一支箭也会找到出口", 300, 705, 12, MUTED, center=True)
+        self.draw_result_action(button, mouse, primary=True, accent=accent)
+        self.draw_result_action(self.result_back_button, mouse, primary=False, accent=accent)
+        footer = ("再试一次，先观察箭头前方的路线" if kind == "game_over"
+                  else "继续保持，下一支箭也会找到出口")
+        self.draw_text(footer, 300, 705, 12, (167, 178, 207), center=True)
+
+    def draw_result_action(self, button: Button, mouse: tuple[int, int], *,
+                           primary: bool, accent: tuple[int, int, int]) -> None:
+        """结果页使用与游戏页相同的扁平深色按钮。"""
+        rect = button.rect
+        hovered = button.contains(mouse)
+        fill = (76, 91, 128) if primary else (65, 70, 99)
+        if hovered:
+            fill = tuple(min(255, channel + 12) for channel in fill)
+        border = accent if primary else (116, 129, 166)
+        pygame.draw.rect(self.screen, (37, 40, 60), rect.move(0, 5), border_radius=15)
+        pygame.draw.rect(self.screen, fill, rect, border_radius=15)
+        pygame.draw.rect(self.screen, border, rect, width=2, border_radius=15)
+        self.draw_text(button.text, rect.centerx, rect.centery, 19, WHITE,
+                       center=True, bold=True)
 
 
 def main() -> None:
