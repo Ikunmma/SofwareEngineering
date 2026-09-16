@@ -429,6 +429,37 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.current_screen, "game")
         self.assertIn("AI", self.app.feedback)
 
+    def test_ai_solver_can_pause_and_resume_during_flight(self) -> None:
+        initial_count = self.app.game.remaining_arrows()
+        self.app.start_auto_solve()
+        elapsed_before_pause = float(self.app.animation["elapsed"])
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.auto_solve_rect.center,
+        ))
+        self.assertTrue(self.app.auto_paused)
+        self.app.update(3.0)
+        self.assertEqual(float(self.app.animation["elapsed"]), elapsed_before_pause)
+        self.assertEqual(self.app.game.remaining_arrows(), initial_count)
+        self.app.draw()
+
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.auto_solve_rect.center,
+        ))
+        self.assertFalse(self.app.auto_paused)
+        self.app.update(3.0)
+        self.assertEqual(self.app.game.remaining_arrows(), initial_count - 1)
+
+    def test_ai_solver_can_pause_between_steps(self) -> None:
+        self.app.start_auto_solve()
+        self.finish_animation()
+        self.assertIsNone(self.app.animation)
+        self.app.toggle_auto_pause()
+        self.app.update(1.0)
+        self.assertIsNone(self.app.animation)
+        self.app.toggle_auto_pause()
+        self.app.update(0.3)
+        self.assertIsNotNone(self.app.animation)
+
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2
         self.app.elapsed_time = self.app.par_time

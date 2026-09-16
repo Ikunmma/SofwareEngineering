@@ -142,6 +142,7 @@ class ArrowEscapeApp:
         self.is_random_challenge = False
         self.random_seed: int | None = None
         self.auto_solving = False
+        self.auto_paused = False
         self.auto_solution: list[object] = []
         self.auto_total_steps = 0
         self.auto_next_delay = 0.0
@@ -348,7 +349,12 @@ class ArrowEscapeApp:
                         self.start_new_game()
                         break
         elif self.current_screen == "game":
-            if self.animating or self.auto_solving:
+            if self.auto_solve_rect.collidepoint(pos):
+                if self.auto_solving:
+                    self.toggle_auto_pause()
+                elif not self.animating:
+                    self.start_auto_solve()
+            elif self.animating or self.auto_solving:
                 message = "AI 正在自动求解，请稍等" if self.auto_solving else "动画进行中，请稍等"
                 self.set_feedback(message, "warning")
             elif self.restart_button.contains(pos):
@@ -357,8 +363,6 @@ class ArrowEscapeApp:
                 self.show_level_select()
             elif self.hint_rect.collidepoint(pos):
                 self.show_hint()
-            elif self.auto_solve_rect.collidepoint(pos):
-                self.start_auto_solve()
             else:
                 self.on_board_click_pos(pos)
         elif self.current_screen in {"level_clear", "game_over", "all_clear", "random_clear"}:
@@ -376,6 +380,8 @@ class ArrowEscapeApp:
     def update(self, dt: float) -> None:
         if self.current_screen == "game":
             self.elapsed_time += max(0.0, dt)
+        if self.auto_solving and self.auto_paused:
+            return
         if not self.animation:
             if self.auto_solving and self.current_screen == "game":
                 self.auto_next_delay -= max(0.0, dt)
@@ -526,13 +532,14 @@ class ArrowEscapeApp:
         self.auto_solution = list(solution)
         self.auto_total_steps = len(self.auto_solution)
         self.auto_solving = True
+        self.auto_paused = False
         self.auto_next_delay = 0.0
         self.set_feedback(f"AI 已找到 {self.auto_total_steps} 步解法，开始演示", "success")
         self.run_next_solution_step()
 
     def run_next_solution_step(self) -> None:
         """执行自动解序列中的下一步，并复用正常点击动画。"""
-        if not self.auto_solving or self.animating:
+        if not self.auto_solving or self.auto_paused or self.animating:
             return
         if not self.auto_solution:
             self.stop_auto_solve()
@@ -553,9 +560,20 @@ class ArrowEscapeApp:
                 return
         self.on_board_click_pos(tuple(map(int, self.cell_center(row, col))))
 
+    def toggle_auto_pause(self) -> None:
+        """暂停或继续当前 AI 自动演示。"""
+        if not self.auto_solving:
+            return
+        self.auto_paused = not self.auto_paused
+        if self.auto_paused:
+            self.set_feedback("AI 求解已暂停，点击继续求解恢复演示", "warning")
+        else:
+            self.set_feedback("AI 求解继续演示", "success")
+
     def stop_auto_solve(self) -> None:
         """清空自动演示状态。"""
         self.auto_solving = False
+        self.auto_paused = False
         self.auto_solution = []
         self.auto_total_steps = 0
         self.auto_next_delay = 0.0
@@ -1185,12 +1203,19 @@ class ArrowEscapeApp:
         pygame.draw.circle(self.screen, hint_color, (84, 720), 24)
         self.draw_text("?", 84, 718, 25, WHITE, center=True, bold=True)
         ai_enabled = not self.animating and not self.auto_solving
-        ai_color = (76, 111, 225) if ai_enabled else (91, 95, 119)
+        if self.auto_paused:
+            ai_color = (218, 145, 28)
+        elif self.auto_solving:
+            ai_color = (51, 181, 122)
+        else:
+            ai_color = (76, 111, 225) if ai_enabled else (91, 95, 119)
         pygame.draw.rect(self.screen, ai_color, self.auto_solve_rect, border_radius=14)
         pygame.draw.rect(self.screen, (135, 201, 239), self.auto_solve_rect, width=2, border_radius=14)
-        if self.auto_solving:
+        if self.auto_paused:
+            ai_text = "继续求解"
+        elif self.auto_solving:
             completed = self.auto_total_steps - len(self.auto_solution)
-            ai_text = f"AI {completed}/{self.auto_total_steps}"
+            ai_text = f"暂停 {completed}/{self.auto_total_steps}"
         else:
             ai_text = "AI 求解"
         self.draw_text(ai_text, self.auto_solve_rect.centerx, self.auto_solve_rect.centery,
