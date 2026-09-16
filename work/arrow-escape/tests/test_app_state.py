@@ -102,7 +102,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertIsInstance(self.app.game, AdvancedBoard)
         self.assertEqual((self.app.game.rows, self.app.game.cols), (16, 12))
 
-    def test_level_select_page_switches_mode_and_opens_chosen_level(self) -> None:
+    def test_level_select_blocks_locked_level_then_opens_after_unlock(self) -> None:
         self.app.show_start_screen()
         self.app.handle_event(pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.start_button.rect.center))
@@ -110,6 +110,11 @@ class PygameStateTest(unittest.TestCase):
         self.app.handle_event(pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_mode_advanced_rect.center))
         self.assertEqual(self.app.selected_mode, "advanced")
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_card_rects[3].center))
+        self.assertEqual(self.app.current_screen, "level_select")
+        self.assertIn("解锁", self.app.progress_notice)
+        self.app.unlocked_levels["advanced"] = 4
         self.app.handle_event(pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.level_card_rects[3].center))
         self.assertEqual(self.app.current_screen, "game")
@@ -258,6 +263,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertGreater(self.app.level_score, main.STARTING_SCORE + main.ARROW_SCORE)
         self.assertEqual(self.app.total_score, self.app.level_score)
         self.assertEqual(self.app.level_records["basic"][0], 3)
+        self.assertEqual(self.app.unlocked_levels["basic"], 2)
         frozen_time = self.app.elapsed_time
         self.app.update(5.0)
         self.assertEqual(self.app.elapsed_time, frozen_time)
@@ -280,6 +286,7 @@ class PygameStateTest(unittest.TestCase):
         self.app.selected_level_index = 3
         self.app.total_score = 2460
         self.app.level_records = {"basic": {0: 3, 2: 1}, "advanced": {1: 2}}
+        self.app.unlocked_levels = {"basic": 4, "advanced": 4}
         self.assertTrue(self.app.save_progress())
 
         restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
@@ -288,6 +295,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(restored.total_score, 2460)
         self.assertEqual(restored.level_records["basic"], {0: 3, 2: 1})
         self.assertEqual(restored.level_records["advanced"], {1: 2})
+        self.assertEqual(restored.unlocked_levels, {"basic": 4, "advanced": 4})
 
     def test_corrupt_progress_file_falls_back_to_defaults(self) -> None:
         self.save_path.write_text("{not valid json", encoding="utf-8")
@@ -296,6 +304,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(restored.selected_level_index, 0)
         self.assertEqual(restored.total_score, 0)
         self.assertEqual(restored.level_records, {"basic": {}, "advanced": {}})
+        self.assertEqual(restored.unlocked_levels, {"basic": 1, "advanced": 1})
 
     def test_invalid_progress_values_are_ignored_or_clamped(self) -> None:
         self.save_path.write_text(json.dumps({
@@ -309,10 +318,11 @@ class PygameStateTest(unittest.TestCase):
             },
         }), encoding="utf-8")
         restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
-        self.assertEqual(restored.selected_level_index, len(ADVANCED_LEVELS) - 1)
+        self.assertEqual(restored.selected_level_index, 3)
         self.assertEqual(restored.total_score, 0)
         self.assertEqual(restored.level_records["basic"], {0: 3})
         self.assertEqual(restored.level_records["advanced"], {2: 2})
+        self.assertEqual(restored.unlocked_levels, {"basic": 2, "advanced": 4})
 
     def test_clear_progress_requires_confirmation_and_deletes_save(self) -> None:
         self.app.total_score = 1800
@@ -346,6 +356,7 @@ class PygameStateTest(unittest.TestCase):
         self.assertFalse(self.save_path.exists())
         self.assertEqual(self.app.total_score, 0)
         self.assertEqual(self.app.level_records, {"basic": {}, "advanced": {}})
+        self.assertEqual(self.app.unlocked_levels, {"basic": 1, "advanced": 1})
         self.assertEqual(self.app.selected_mode, "basic")
         self.assertIn("已清除", self.app.progress_notice)
 

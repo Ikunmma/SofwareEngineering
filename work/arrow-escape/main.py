@@ -138,6 +138,7 @@ class ArrowEscapeApp:
         self.level_scored = False
         self.hints_remaining = MAX_HINTS
         self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
+        self.unlocked_levels: dict[str, int] = {"basic": 1, "advanced": 1}
         self.sound_enabled = True
         self.save_path = Path(save_path) if save_path is not None else SAVE_FILE
         self.load_progress()
@@ -464,8 +465,12 @@ class ArrowEscapeApp:
             else:
                 for index, rect in enumerate(self.level_card_rects):
                     if rect.collidepoint(pos):
-                        self.selected_level_index = index
-                        self.start_new_game()
+                        if self.is_level_unlocked(index):
+                            self.selected_level_index = index
+                            self.progress_notice = ""
+                            self.start_new_game()
+                        else:
+                            self.progress_notice = f"请先完成第 {index} 关以解锁"
                         break
         elif self.current_screen == "game":
             if self.mute_rect.collidepoint(pos):
@@ -606,6 +611,11 @@ class ArrowEscapeApp:
     def levels_for_mode(self):
         """返回当前模式对应的关卡集合。"""
         return ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
+
+    def is_level_unlocked(self, level_index: int, mode: str | None = None) -> bool:
+        """判断指定模式的关卡是否已经开放。"""
+        mode = self.selected_mode if mode is None else mode
+        return 0 <= level_index < self.unlocked_levels.get(mode, 1)
 
     def start_random_challenge(self, seed: int | None = None) -> None:
         """按当前模式生成并验证一局全新的可通关挑战。"""
@@ -765,6 +775,24 @@ class ArrowEscapeApp:
                                 and not isinstance(raw_stars, bool) and 1 <= raw_stars <= 3):
                             cleaned[index] = raw_stars
                     self.level_records[record_mode] = cleaned
+
+            raw_unlocks = data.get("unlocked_levels", {})
+            for unlock_mode, mode_level_count in (
+                ("basic", len(LEVELS)), ("advanced", len(ADVANCED_LEVELS))
+            ):
+                migrated = min(
+                    mode_level_count,
+                    max(self.level_records[unlock_mode].keys(), default=-1) + 2,
+                )
+                saved = raw_unlocks.get(unlock_mode, 1) if isinstance(raw_unlocks, dict) else 1
+                if not isinstance(saved, int) or isinstance(saved, bool):
+                    saved = 1
+                self.unlocked_levels[unlock_mode] = min(
+                    mode_level_count, max(1, saved, migrated)
+                )
+            self.selected_level_index = min(
+                self.selected_level_index, self.unlocked_levels[self.selected_mode] - 1
+            )
             return True
         except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
             return False
@@ -777,6 +805,7 @@ class ArrowEscapeApp:
             "selected_level": self.selected_level_index,
             "total_score": self.total_score,
             "sound_enabled": self.sound_enabled,
+            "unlocked_levels": self.unlocked_levels,
             "level_records": {
                 mode: {str(index): stars for index, stars in records.items()}
                 for mode, records in self.level_records.items()
@@ -805,6 +834,7 @@ class ArrowEscapeApp:
         self.total_score = 0
         self.earned_stars = 0
         self.level_records = {"basic": {}, "advanced": {}}
+        self.unlocked_levels = {"basic": 1, "advanced": 1}
         removed = True
         for path in (self.save_path, self.save_path.with_suffix(self.save_path.suffix + ".tmp")):
             try:
@@ -848,6 +878,10 @@ class ArrowEscapeApp:
             records = self.level_records[self.selected_mode]
             records[self.current_level_index] = max(
                 records.get(self.current_level_index, 0), self.earned_stars
+            )
+            self.unlocked_levels[self.selected_mode] = min(
+                len(self.levels_for_mode()),
+                max(self.unlocked_levels[self.selected_mode], self.current_level_index + 2),
             )
         self.level_scored = True
         self.save_progress()
@@ -1285,21 +1319,34 @@ class ArrowEscapeApp:
             pygame.draw.lines(self.screen, (135, 156, 196), False, route_points, 7)
             pygame.draw.lines(self.screen, WHITE, False, route_points, 3)
         for index, (level, rect) in enumerate(zip(levels, self.level_card_rects)):
-            hovered = rect.collidepoint(mouse)
+            unlocked = self.is_level_unlocked(index)
+            hovered = unlocked and rect.collidepoint(mouse)
             x, y = self.level_node_centers[index]
-            accent = accents[index]
+            accent = accents[index] if unlocked else (158, 168, 190)
             best_stars = self.level_records[self.selected_mode].get(index, 0)
             radius = 38 if hovered else 34
             pygame.draw.circle(self.screen, (69, 82, 120, 40), (x + 3, y + 6), radius + 7)
-            pygame.draw.circle(self.screen, WHITE, (x, y), radius + 7)
+            pygame.draw.circle(self.screen, WHITE if unlocked else (226, 232, 243), (x, y), radius + 7)
             pygame.draw.circle(self.screen, accent, (x, y), radius)
             if best_stars:
                 pygame.draw.circle(self.screen, YELLOW, (x, y), radius + 8, width=4)
-            self.draw_text(str(index + 1), x, y - 2, 24, WHITE, center=True, bold=True)
+            if unlocked:
+                self.draw_text(str(index + 1), x, y - 2, 24, WHITE, center=True, bold=True)
+            else:
+                pygame.draw.lines(
+                    self.screen, WHITE, False,
+                    ((x - 10, y - 2), (x - 10, y - 11), (x - 6, y - 17),
+                     (x, y - 20), (x + 6, y - 17), (x + 10, y - 11),
+                     (x + 10, y - 2)), 5,
+                )
+                pygame.draw.rect(self.screen, WHITE, (x - 15, y - 3, 30, 23), border_radius=5)
+                pygame.draw.circle(self.screen, accent, (x, y + 7), 3)
             label = pygame.Rect(x - 72, y + 41, 144, 33)
-            pygame.draw.rect(self.screen, WHITE, label, border_radius=12)
+            pygame.draw.rect(self.screen, WHITE if unlocked else (235, 239, 247), label, border_radius=12)
             pygame.draw.rect(self.screen, (*accent,), label, width=2, border_radius=12)
-            self.draw_text(f"第 {index + 1} 关 · {level.name}", x, y + 57, 13, NAVY, center=True, bold=True)
+            label_color = NAVY if unlocked else MUTED
+            self.draw_text(f"第 {index + 1} 关 · {level.name}", x, y + 57, 13,
+                           label_color, center=True, bold=True)
             if best_stars:
                 # 绿色勾表示已通关，金色小牌显示本次运行中的最好星级。
                 badge_center = (x + 31, y - 29)
