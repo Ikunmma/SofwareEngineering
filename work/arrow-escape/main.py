@@ -146,6 +146,7 @@ class ArrowEscapeApp:
         self.auto_solution: list[object] = []
         self.auto_total_steps = 0
         self.auto_next_delay = 0.0
+        self.auto_replan_needed = False
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
@@ -354,17 +355,22 @@ class ArrowEscapeApp:
                     self.toggle_auto_pause()
                 elif not self.animating:
                     self.start_auto_solve()
-            elif self.animating or self.auto_solving:
+            elif self.animating or (self.auto_solving and not self.auto_paused):
                 message = "AI 正在自动求解，请稍等" if self.auto_solving else "动画进行中，请稍等"
                 self.set_feedback(message, "warning")
             elif self.restart_button.contains(pos):
                 self.restart_board()
             elif self.home_button.contains(pos):
+                if self.auto_paused:
+                    self.stop_auto_solve()
                 self.show_level_select()
             elif self.hint_rect.collidepoint(pos):
                 self.show_hint()
             else:
                 self.on_board_click_pos(pos)
+                if (self.auto_paused and self.animation
+                        and self.animation.get("kind") == "flight"):
+                    self.auto_replan_needed = True
         elif self.current_screen in {"level_clear", "game_over", "all_clear", "random_clear"}:
             if self.result_back_button.contains(pos):
                 self.show_level_select()
@@ -380,10 +386,8 @@ class ArrowEscapeApp:
     def update(self, dt: float) -> None:
         if self.current_screen == "game":
             self.elapsed_time += max(0.0, dt)
-        if self.auto_solving and self.auto_paused:
-            return
         if not self.animation:
-            if self.auto_solving and self.current_screen == "game":
+            if self.auto_solving and not self.auto_paused and self.current_screen == "game":
                 self.auto_next_delay -= max(0.0, dt)
                 if self.auto_next_delay <= 0:
                     self.run_next_solution_step()
@@ -533,6 +537,7 @@ class ArrowEscapeApp:
         self.auto_total_steps = len(self.auto_solution)
         self.auto_solving = True
         self.auto_paused = False
+        self.auto_replan_needed = False
         self.auto_next_delay = 0.0
         self.set_feedback(f"AI 已找到 {self.auto_total_steps} 步解法，开始演示", "success")
         self.run_next_solution_step()
@@ -564,11 +569,28 @@ class ArrowEscapeApp:
         """暂停或继续当前 AI 自动演示。"""
         if not self.auto_solving:
             return
-        self.auto_paused = not self.auto_paused
-        if self.auto_paused:
-            self.set_feedback("AI 求解已暂停，点击继续求解恢复演示", "warning")
-        else:
-            self.set_feedback("AI 求解继续演示", "success")
+        if not self.auto_paused:
+            self.auto_paused = True
+            self.set_feedback("AI 已暂停，当前箭头飞出后可手动操作", "warning")
+            return
+
+        if self.auto_replan_needed:
+            if self.selected_mode == "advanced":
+                solution: list[object] | None = solve_advanced(
+                    self.game.level, self.game.active_ids
+                )
+            else:
+                solution = solve(self.game.board)
+            if solution is None:
+                self.stop_auto_solve()
+                self.set_feedback("手动操作后的局面无解，AI 求解已停止", "danger")
+                return
+            self.auto_solution = list(solution)
+            self.auto_total_steps = len(self.auto_solution)
+            self.auto_replan_needed = False
+        self.auto_paused = False
+        self.auto_next_delay = 0.0
+        self.set_feedback("AI 已根据当前残局继续求解", "success")
 
     def stop_auto_solve(self) -> None:
         """清空自动演示状态。"""
@@ -577,6 +599,7 @@ class ArrowEscapeApp:
         self.auto_solution = []
         self.auto_total_steps = 0
         self.auto_next_delay = 0.0
+        self.auto_replan_needed = False
 
     def load_progress(self) -> bool:
         """读取本地 JSON 存档；数据缺失或损坏时保留默认进度。"""
@@ -1162,8 +1185,9 @@ class ArrowEscapeApp:
         pygame.draw.circle(glow, (50, 201, 177, 18), (590, 560), 240)
         self.screen.blit(glow, (0, 0))
         pygame.draw.line(self.screen, (126, 135, 168), (0, 145), (WINDOW_WIDTH, 145), 2)
-        self.restart_button.enabled = not self.animating and not self.auto_solving
-        self.home_button.enabled = not self.animating and not self.auto_solving
+        controls_enabled = not self.animating and (not self.auto_solving or self.auto_paused)
+        self.restart_button.enabled = controls_enabled
+        self.home_button.enabled = controls_enabled
         self.restart_button.draw(self, mouse)
         self.home_button.draw(self, mouse)
         title = "随机挑战" if self.is_random_challenge else f"关卡 {self.current_level_index + 1}"

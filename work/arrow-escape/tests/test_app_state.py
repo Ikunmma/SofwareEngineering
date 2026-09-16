@@ -212,7 +212,11 @@ class PygameStateTest(unittest.TestCase):
 
     def test_restart_restores_board_and_mistakes(self) -> None:
         initial_count = self.app.game.remaining_arrows()
-        self.click_cell(*self.app.game.removable_arrows()[0])
+        manual_cell = self.app.game.removable_arrows()[0]
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=tuple(map(int, self.app.cell_center(*manual_cell))),
+        ))
         self.finish_animation()
         self.assertEqual(self.app.game.remaining_arrows(), initial_count - 1)
         self.click_cell(*self.first_blocked_cell())
@@ -429,25 +433,36 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.current_screen, "game")
         self.assertIn("AI", self.app.feedback)
 
-    def test_ai_solver_can_pause_and_resume_during_flight(self) -> None:
+    def test_paused_ai_allows_manual_move_and_replans_on_resume(self) -> None:
         initial_count = self.app.game.remaining_arrows()
         self.app.start_auto_solve()
-        elapsed_before_pause = float(self.app.animation["elapsed"])
         self.app.handle_event(pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.auto_solve_rect.center,
         ))
         self.assertTrue(self.app.auto_paused)
         self.app.update(3.0)
-        self.assertEqual(float(self.app.animation["elapsed"]), elapsed_before_pause)
-        self.assertEqual(self.app.game.remaining_arrows(), initial_count)
+        self.assertIsNone(self.app.animation)
+        self.assertEqual(self.app.game.remaining_arrows(), initial_count - 1)
         self.app.draw()
+
+        manual_cell = self.app.game.removable_arrows()[0]
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=tuple(map(int, self.app.cell_center(*manual_cell))),
+        ))
+        self.assertTrue(self.app.auto_replan_needed)
+        self.finish_animation()
+        remaining = self.app.game.remaining_arrows()
+        self.assertEqual(remaining, initial_count - 2)
 
         self.app.handle_event(pygame.event.Event(
             pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.auto_solve_rect.center,
         ))
         self.assertFalse(self.app.auto_paused)
-        self.app.update(3.0)
-        self.assertEqual(self.app.game.remaining_arrows(), initial_count - 1)
+        self.assertFalse(self.app.auto_replan_needed)
+        self.assertEqual(self.app.auto_total_steps, remaining)
+        self.app.update(0.3)
+        self.assertIsNotNone(self.app.animation)
 
     def test_ai_solver_can_pause_between_steps(self) -> None:
         self.app.start_auto_solve()
