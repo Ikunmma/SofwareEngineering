@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import random
 import json
+from array import array
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,6 +117,7 @@ class ArrowEscapeApp:
 
     def __init__(self, *, create_display: bool = True,
                  save_path: str | Path | None = None) -> None:
+        pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         pygame.font.init()
         flags = 0 if create_display else pygame.HIDDEN
@@ -157,7 +159,10 @@ class ArrowEscapeApp:
         self.hint_arrow_id: int | None = None
         self.feedback = "点击前方没有阻挡的箭头"
         self.feedback_kind = "normal"
+        self.sound_enabled = True
+        self.effects: list[dict[str, object]] = []
         self.assets = self._load_assets()
+        self.sounds = self._make_sounds()
         self._font_cache: dict[tuple[int, bool, bool], pygame.font.Font] = {}
         self.background = self._make_background()
         self.home_background = self._make_home_background()
@@ -206,6 +211,106 @@ class ArrowEscapeApp:
             ASSET_DIR / "Red" / "icon_cross.png"
         ).convert_alpha()
         return assets
+
+    def _make_sounds(self) -> dict[str, pygame.mixer.Sound]:
+        """实时合成短音效，不依赖外部音频文件。"""
+        if pygame.mixer.get_init() is None:
+            return {}
+        sample_rate, sample_format, channels = pygame.mixer.get_init()
+        if sample_format != -16:
+            return {}
+
+        def tone(start: float, end: float, duration: float, volume: float,
+                 harmonic: float = 0.0) -> pygame.mixer.Sound:
+            samples = array("h")
+            count = max(1, int(sample_rate * duration))
+            phase = 0.0
+            for index in range(count):
+                progress = index / count
+                frequency = start + (end - start) * progress
+                phase += math.tau * frequency / sample_rate
+                envelope = math.sin(math.pi * progress) ** 1.4
+                wave = math.sin(phase) + harmonic * math.sin(phase * 2.01)
+                value = int(32767 * volume * envelope * wave / (1 + abs(harmonic)))
+                for _ in range(channels):
+                    samples.append(value)
+            return pygame.mixer.Sound(buffer=samples.tobytes())
+
+        try:
+            sounds = {
+                "launch": tone(360, 880, 0.16, 0.22, 0.12),
+                "collision": tone(170, 75, 0.24, 0.28, 0.55),
+                "pop": tone(760, 1120, 0.10, 0.17, 0.08),
+                "hint": tone(620, 940, 0.18, 0.16, 0.18),
+                "clear": tone(520, 1320, 0.42, 0.20, 0.25),
+            }
+            for sound in sounds.values():
+                sound.set_volume(0.8)
+            return sounds
+        except (pygame.error, ValueError, OverflowError):
+            return {}
+
+    def play_sound(self, name: str) -> None:
+        """安全播放音效；无声卡或初始化失败时保持静音。"""
+        if not self.sound_enabled:
+            return
+        sound = self.sounds.get(name)
+        if sound is not None:
+            try:
+                sound.play()
+            except pygame.error:
+                pass
+
+    @staticmethod
+    def flight_travel(elapsed: float) -> float:
+        """使用平滑加速曲线计算飞行距离，避免突然启动。"""
+        elapsed = max(0.0, elapsed)
+        ramp = min(1.0, elapsed / 0.42)
+        smooth = ramp * ramp * (3.0 - 2.0 * ramp)
+        return FLIGHT_SPEED * elapsed * (0.48 + 0.52 * smooth)
+
+    def spawn_particles(
+        self, center: tuple[float, float], color: tuple[int, int, int], count: int = 14,
+    ) -> None:
+        """在指定位置生成轻量粒子反馈。"""
+        for _ in range(count):
+            angle = random.uniform(0, math.tau)
+            speed = random.uniform(45, 155)
+            life = random.uniform(0.32, 0.62)
+            self.effects.append({
+                "x": float(center[0]), "y": float(center[1]),
+                "vx": math.cos(angle) * speed, "vy": math.sin(angle) * speed,
+                "life": life, "max_life": life, "color": color,
+                "radius": random.uniform(2.0, 5.0),
+            })
+
+    def _update_effects(self, dt: float) -> None:
+        alive: list[dict[str, object]] = []
+        for effect in self.effects:
+            life = float(effect["life"]) - max(0.0, dt)
+            if life <= 0:
+                continue
+            effect["life"] = life
+            effect["x"] = float(effect["x"]) + float(effect["vx"]) * dt
+            effect["y"] = float(effect["y"]) + float(effect["vy"]) * dt
+            effect["vy"] = float(effect["vy"]) + 90.0 * dt
+            alive.append(effect)
+        self.effects = alive
+
+    def draw_effects(self) -> None:
+        if not self.effects:
+            return
+        layer = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        for effect in self.effects:
+            ratio = float(effect["life"]) / float(effect["max_life"])
+            color = tuple(effect["color"])
+            alpha = max(0, min(255, int(220 * ratio)))
+            radius = max(1, int(float(effect["radius"]) * (0.55 + ratio)))
+            pygame.draw.circle(
+                layer, (*color, alpha),
+                (round(float(effect["x"])), round(float(effect["y"]))), radius,
+            )
+        self.screen.blit(layer, (0, 0))
 
     @staticmethod
     def _make_background() -> pygame.Surface:
@@ -386,6 +491,7 @@ class ArrowEscapeApp:
     def update(self, dt: float) -> None:
         if self.current_screen == "game":
             self.elapsed_time += max(0.0, dt)
+        self._update_effects(dt)
         if not self.animation:
             if self.auto_solving and not self.auto_paused and self.current_screen == "game":
                 self.auto_next_delay -= max(0.0, dt)
@@ -402,7 +508,7 @@ class ArrowEscapeApp:
             row_step, col_step = DIRECTION_VECTORS[direction]
             if "arrow_id" in self.animation:
                 arrow_id = int(self.animation["arrow_id"])
-                tail_x, tail_y = self.advanced_flight_points(arrow_id, elapsed * FLIGHT_SPEED)[0]
+                tail_x, tail_y = self.advanced_flight_points(arrow_id, self.flight_travel(elapsed))[0]
                 if tail_x < -80 or tail_x > WINDOW_WIDTH + 80 or tail_y < -80 or tail_y > WINDOW_HEIGHT + 80:
                     self._complete_advanced_flight(arrow_id)
                 return
@@ -410,8 +516,9 @@ class ArrowEscapeApp:
                 row = int(self.animation["row"])
                 col = int(self.animation["col"])
                 start_x, start_y = self.cell_center(row, col)
-            x = start_x + col_step * FLIGHT_SPEED * elapsed
-            y = start_y + row_step * FLIGHT_SPEED * elapsed
+            travel = self.flight_travel(elapsed)
+            x = start_x + col_step * travel
+            y = start_y + row_step * travel
             if x < -80 or x > WINDOW_WIDTH + 80 or y < -80 or y > WINDOW_HEIGHT + 80:
                 if "arrow_id" in self.animation:
                     self._complete_advanced_flight(arrow_id)
@@ -724,6 +831,7 @@ class ArrowEscapeApp:
             )
         self.level_scored = True
         self.save_progress()
+        self.play_sound("clear")
 
     def retry_after_failure(self) -> None:
         self.stop_auto_solve()
@@ -812,6 +920,7 @@ class ArrowEscapeApp:
             self.set_feedback(f"提示：点击第 {row + 1} 行第 {col + 1} 列的高亮箭头", "success")
         self.hints_remaining -= 1
         self.level_score = max(0, self.level_score - HINT_PENALTY)
+        self.play_sound("hint")
 
     def on_board_click_pos(self, position: tuple[int, int]) -> None:
         if self.animating:
@@ -837,6 +946,7 @@ class ArrowEscapeApp:
             self.animating = True
             self.animation = {"kind": "collision", "row": row, "col": col, "elapsed": 0.0}
             self.set_feedback(f"碰撞！{DIRECTION_NAMES[direction]}箭头前方有阻挡", "danger")
+            self.play_sound("collision")
         else:
             self.animating = True
             self.animation = {
@@ -844,6 +954,7 @@ class ArrowEscapeApp:
                 "direction": direction, "elapsed": 0.0,
             }
             self.set_feedback(f"{DIRECTION_NAMES[direction]}箭头正在飞出棋盘", "success")
+            self.play_sound("launch")
 
     def _on_advanced_click(self, row: int, col: int) -> None:
         arrow_id = self.game.arrow_at(row, col)
@@ -861,6 +972,7 @@ class ArrowEscapeApp:
                 "direction": path.direction, "elapsed": 0.0,
             }
             self.set_feedback("碰撞！这条折线的出口方向仍有阻挡", "danger")
+            self.play_sound("collision")
         else:
             self.animating = True
             self.animation = {
@@ -868,8 +980,17 @@ class ArrowEscapeApp:
                 "direction": path.direction, "elapsed": 0.0,
             }
             self.set_feedback("折线箭头正在飞出棋盘", "success")
+            self.play_sound("launch")
 
     def _complete_collision(self) -> None:
+        if self.animation and "arrow_id" in self.animation:
+            path = self.game.path(int(self.animation["arrow_id"]))
+            center = self.cell_center(*path.cells[-1])
+        elif self.animation:
+            center = self.cell_center(int(self.animation["row"]), int(self.animation["col"]))
+        else:
+            center = (WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)
+        self.spawn_particles(center, RED, count=10)
         self.animating = False
         self.animation = None
         self.selected_cell = None
@@ -881,6 +1002,9 @@ class ArrowEscapeApp:
     def _complete_arrow_flight(self, row: int, col: int, direction: str) -> None:
         if self.game.remove_arrow(row, col):
             self.level_score += ARROW_SCORE
+            color = DIRECTION_COLORS[direction][1]
+            self.spawn_particles(self.cell_center(row, col), color)
+            self.play_sound("pop")
         self.animating = False
         self.animation = None
         self.selected_cell = None
@@ -902,8 +1026,13 @@ class ArrowEscapeApp:
             )
 
     def _complete_advanced_flight(self, arrow_id: int) -> None:
+        path = self.game.path(arrow_id)
+        particle_center = self.cell_center(*path.cells[-1])
+        particle_color = ADVANCED_COLORS[path.color]
         if self.game.remove_arrow(arrow_id):
             self.level_score += ARROW_SCORE
+            self.spawn_particles(particle_center, particle_color, count=18)
+            self.play_sound("pop")
         self.animating = False
         self.animation = None
         self.hint_arrow_id = None
@@ -1209,6 +1338,7 @@ class ArrowEscapeApp:
         self.draw_text(f"得分 {self.level_score}", 430, 116, 13,
                        status_color, center=True, bold=True)
         self.draw_board()
+        self.draw_effects()
 
         feedback_colors = {
             "normal": (135, 201, 239), "success": (103, 224, 168),
@@ -1256,6 +1386,13 @@ class ArrowEscapeApp:
             (left - 10, top - 10, width + 20, height + 20),
             border_radius=16,
         )
+        if self.animation and self.animation["kind"] == "collision":
+            pulse = 110 + int(100 * abs(math.sin(float(self.animation["elapsed"]) * 24)))
+            border = pygame.Surface((width + 24, height + 24), pygame.SRCALPHA)
+            pygame.draw.rect(
+                border, (*RED, pulse), border.get_rect(), width=4, border_radius=18,
+            )
+            self.screen.blit(border, (left - 12, top - 12))
         for row in range(self.game.rows if self.selected_mode == "basic" else 0):
             for col in range(self.game.cols):
                 pygame.draw.circle(
@@ -1299,9 +1436,21 @@ class ArrowEscapeApp:
             row_step, col_step = DIRECTION_VECTORS[direction]
             elapsed = float(self.animation["elapsed"])
             x, y = self.cell_center(row, col)
+            trail = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            accent = DIRECTION_COLORS[direction][1]
+            for index in range(1, 6):
+                past = max(0.0, elapsed - index * 0.035)
+                travel = self.flight_travel(past)
+                point = (round(x + col_step * travel), round(y + row_step * travel))
+                pygame.draw.circle(
+                    trail, (*accent, max(18, 105 - index * 16)), point,
+                    max(3, arrow_size // 3 - index),
+                )
+            self.screen.blit(trail, (0, 0))
+            travel = self.flight_travel(elapsed)
             self.draw_arrow(
                 direction,
-                (x + col_step * FLIGHT_SPEED * elapsed, y + row_step * FLIGHT_SPEED * elapsed),
+                (x + col_step * travel, y + row_step * travel),
                 arrow_size,
             )
 
@@ -1351,10 +1500,16 @@ class ArrowEscapeApp:
              int(self.cell_center(row, col)[1] + offset[1]))
             for row, col in path.cells
         ]
+        width = max(4, cell_size // 6)
         if self.animation and self.animation.get("arrow_id") == arrow_id and self.animation["kind"] == "flight":
             points = [tuple(map(round, p)) for p in self.advanced_flight_points(
-                arrow_id, float(self.animation["elapsed"]) * FLIGHT_SPEED)]
-        width = max(4, cell_size // 6)
+                arrow_id, self.flight_travel(float(self.animation["elapsed"])))]
+            glow = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            if len(points) > 1:
+                pygame.draw.lines(glow, (*color, 70), False, points, width + 8)
+                for point in points:
+                    pygame.draw.circle(glow, (*color, 55), point, width // 2 + 5)
+            self.screen.blit(glow, (0, 0))
         if hinted:
             pygame.draw.lines(self.screen, (255, 239, 156), False, points, width + 4)
         if len(points) > 1:

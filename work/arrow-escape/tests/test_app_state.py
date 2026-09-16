@@ -475,6 +475,31 @@ class PygameStateTest(unittest.TestCase):
         self.app.update(0.3)
         self.assertIsNotNone(self.app.animation)
 
+    def test_flight_motion_is_smooth_and_monotonic(self) -> None:
+        samples = [self.app.flight_travel(value) for value in (0.0, 0.05, 0.1, 0.2, 0.4, 0.8)]
+        self.assertEqual(samples[0], 0.0)
+        self.assertEqual(samples, sorted(samples))
+        self.assertGreater(samples[-1], samples[-2])
+        self.assertGreater(samples[3] - samples[2], samples[1] - samples[0])
+
+    def test_particle_effects_animate_and_expire(self) -> None:
+        self.app.spawn_particles((100, 100), main.BLUE, count=8)
+        self.assertEqual(len(self.app.effects), 8)
+        initial_positions = [(item["x"], item["y"]) for item in self.app.effects]
+        self.app._update_effects(0.1)
+        moved_positions = [(item["x"], item["y"]) for item in self.app.effects]
+        self.assertNotEqual(initial_positions, moved_positions)
+        self.app.draw_effects()
+        self.app._update_effects(1.0)
+        self.assertEqual(self.app.effects, [])
+
+    def test_procedural_sounds_are_safe_and_can_be_muted(self) -> None:
+        if pygame.mixer.get_init() is not None:
+            self.assertTrue({"launch", "collision", "pop", "hint", "clear"}.issubset(self.app.sounds))
+        self.app.sound_enabled = False
+        for name in ("launch", "collision", "pop", "hint", "clear", "missing"):
+            self.app.play_sound(name)
+
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2
         self.app.elapsed_time = self.app.par_time
