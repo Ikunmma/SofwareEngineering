@@ -18,7 +18,8 @@ if str(PROJECT_DIR) not in sys.path:
 import pygame  # noqa: E402
 
 import main  # noqa: E402
-from advanced_logic import AdvancedBoard  # noqa: E402
+from advanced_logic import AdvancedBoard, solve_advanced  # noqa: E402
+from game_logic import solve  # noqa: E402
 from levels import LEVELS  # noqa: E402
 from advanced_levels import ADVANCED_LEVELS  # noqa: E402
 
@@ -355,6 +356,78 @@ class PygameStateTest(unittest.TestCase):
         ))
         self.assertEqual(self.app.current_screen, "level_select")
         self.assertTrue(self.app.clear_confirm_visible)
+
+    def test_random_basic_challenge_is_generated_and_solvable(self) -> None:
+        previous_records = {mode: records.copy() for mode, records in self.app.level_records.items()}
+        self.app.selected_mode = "basic"
+        self.app.start_random_challenge(seed=20260916)
+        self.assertTrue(self.app.is_random_challenge)
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertIn(self.app.game.rows, (6, 7, 8, 9))
+        self.assertEqual(self.app.game.rows, self.app.game.cols)
+        self.assertIsNotNone(solve(self.app.game.board))
+        self.app.finish_level_stats()
+        self.assertEqual(self.app.level_records, previous_records)
+
+    def test_random_advanced_challenge_is_generated_and_solvable(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.start_random_challenge(seed=314159)
+        self.assertTrue(self.app.is_random_challenge)
+        self.assertIsInstance(self.app.game, AdvancedBoard)
+        self.assertIsNotNone(solve_advanced(self.app.game.level))
+        self.assertGreater(self.app.game.remaining_arrows(), 0)
+
+    def test_random_challenge_button_and_clear_result_flow(self) -> None:
+        self.app.current_screen = "level_select"
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.random_challenge_button.rect.center,
+        ))
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertTrue(self.app.is_random_challenge)
+        self.app.game.board = [[None] * self.app.game.cols for _ in range(self.app.game.rows)]
+        self.app.game.board[0][0] = "up"
+        self.click_cell(0, 0)
+        self.finish_animation()
+        self.assertEqual(self.app.current_screen, "random_clear")
+
+    def test_ai_solver_completes_current_basic_board(self) -> None:
+        self.click_cell(*self.app.game.removable_arrows()[0])
+        self.finish_animation()
+        remaining = self.app.game.remaining_arrows()
+        self.app.start_auto_solve()
+        self.assertTrue(self.app.auto_solving)
+        self.assertEqual(self.app.auto_total_steps, remaining)
+        for _ in range(remaining * 3 + 5):
+            if self.app.current_screen != "game":
+                break
+            self.app.update(3.0 if self.app.animation else 0.3)
+        self.assertFalse(self.app.auto_solving)
+        self.assertEqual(self.app.game.remaining_arrows(), 0)
+        self.assertEqual(self.app.current_screen, "level_clear")
+
+    def test_ai_solver_supports_advanced_remaining_state(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.start_new_game()
+        first = self.app.game.removable_arrows()[0]
+        self.assertTrue(self.app.game.remove_arrow(first))
+        expected = solve_advanced(self.app.game.level, self.app.game.active_ids)
+        self.assertIsNotNone(expected)
+        self.app.start_auto_solve()
+        self.assertTrue(self.app.auto_solving)
+        self.assertEqual(self.app.auto_total_steps, len(expected))
+        self.assertEqual(self.app.animation["kind"], "flight")
+
+    def test_ai_solver_locks_other_actions_between_steps(self) -> None:
+        self.app.start_auto_solve()
+        self.finish_animation()
+        self.assertTrue(self.app.auto_solving)
+        self.assertIsNone(self.app.animation)
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.home_button.rect.center,
+        ))
+        self.assertEqual(self.app.current_screen, "game")
+        self.assertIn("AI", self.app.feedback)
 
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2

@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pygame
 
-from advanced_levels import ADVANCED_LEVELS
-from advanced_logic import AdvancedBoard
-from game_logic import DIRECTION_VECTORS, ArrowBoard
-from levels import DOWN, LEFT, LEVELS, RIGHT, UP
+from advanced_levels import ADVANCED_LEVELS, make_dense_advanced_level
+from advanced_logic import AdvancedBoard, solve_advanced
+from game_logic import DIRECTION_VECTORS, ArrowBoard, solve
+from levels import DOWN, LEFT, LEVELS, RIGHT, UP, make_dense_board
 
 
 WINDOW_WIDTH = 600
@@ -139,6 +139,12 @@ class ArrowEscapeApp:
         self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
         self.save_path = Path(save_path) if save_path is not None else SAVE_FILE
         self.load_progress()
+        self.is_random_challenge = False
+        self.random_seed: int | None = None
+        self.auto_solving = False
+        self.auto_solution: list[object] = []
+        self.auto_total_steps = 0
+        self.auto_next_delay = 0.0
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
@@ -164,9 +170,11 @@ class ArrowEscapeApp:
         )
         self.level_back_button = Button(pygame.Rect(24, 38, 105, 48), "返回", "Grey")
         self.clear_progress_button = Button(pygame.Rect(438, 38, 138, 48), "清除进度", "Red")
+        self.random_challenge_button = Button(pygame.Rect(210, 752, 180, 48), "随机挑战", "Yellow")
         self.clear_confirm_button = Button(pygame.Rect(112, 480, 176, 56), "确认清除", "Red")
         self.clear_cancel_button = Button(pygame.Rect(312, 480, 176, 56), "取消", "Grey")
         self.hint_rect = pygame.Rect(36, 684, 98, 88)
+        self.auto_solve_rect = pygame.Rect(232, 704, 136, 58)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "选关", "Grey")
         self.next_button = Button(pygame.Rect(88, 620, 200, 60), "下一关", "Green")
@@ -321,6 +329,8 @@ class ArrowEscapeApp:
                 self.show_start_screen()
             elif self.clear_progress_button.contains(pos):
                 self.clear_confirm_visible = True
+            elif self.random_challenge_button.contains(pos):
+                self.start_random_challenge()
             elif self.level_mode_basic_rect.collidepoint(pos):
                 self.selected_mode = "basic"
                 self.selected_level_index = 0
@@ -338,17 +348,20 @@ class ArrowEscapeApp:
                         self.start_new_game()
                         break
         elif self.current_screen == "game":
-            if self.animating:
-                self.set_feedback("动画进行中，请稍等", "warning")
+            if self.animating or self.auto_solving:
+                message = "AI 正在自动求解，请稍等" if self.auto_solving else "动画进行中，请稍等"
+                self.set_feedback(message, "warning")
             elif self.restart_button.contains(pos):
                 self.restart_board()
             elif self.home_button.contains(pos):
                 self.show_level_select()
             elif self.hint_rect.collidepoint(pos):
                 self.show_hint()
+            elif self.auto_solve_rect.collidepoint(pos):
+                self.start_auto_solve()
             else:
                 self.on_board_click_pos(pos)
-        elif self.current_screen in {"level_clear", "game_over", "all_clear"}:
+        elif self.current_screen in {"level_clear", "game_over", "all_clear", "random_clear"}:
             if self.result_back_button.contains(pos):
                 self.show_level_select()
             elif self.current_screen == "level_clear" and self.next_button.contains(pos):
@@ -357,11 +370,17 @@ class ArrowEscapeApp:
                 self.retry_after_failure()
             elif self.current_screen == "all_clear" and self.replay_button.contains(pos):
                 self.start_new_game()
+            elif self.current_screen == "random_clear" and self.replay_button.contains(pos):
+                self.start_random_challenge()
 
     def update(self, dt: float) -> None:
         if self.current_screen == "game":
             self.elapsed_time += max(0.0, dt)
         if not self.animation:
+            if self.auto_solving and self.current_screen == "game":
+                self.auto_next_delay -= max(0.0, dt)
+                if self.auto_next_delay <= 0:
+                    self.run_next_solution_step()
             return
         self.animation["elapsed"] = float(self.animation["elapsed"]) + dt
         kind = self.animation["kind"]
@@ -390,18 +409,21 @@ class ArrowEscapeApp:
                     self._complete_arrow_flight(row, col, direction)
 
     def show_start_screen(self) -> None:
-        if not self.animating:
+        if not self.animating and not self.auto_solving:
             self.current_screen = "start"
             self.help_visible = False
 
     def show_level_select(self) -> None:
         """返回当前模式的关卡地图。"""
-        if not self.animating:
+        if not self.animating and not self.auto_solving:
             self.current_screen = "level_select"
             self.help_visible = False
             self.clear_confirm_visible = False
 
     def start_new_game(self) -> None:
+        self.stop_auto_solve()
+        self.is_random_challenge = False
+        self.random_seed = None
         self.current_level_index = self.selected_level_index
         levels = self.levels_for_mode()
         if self.selected_mode == "advanced":
@@ -425,6 +447,9 @@ class ArrowEscapeApp:
             raise IndexError("关卡索引越界")
         if self.animating:
             raise RuntimeError("动画进行中不能切换关卡")
+        self.stop_auto_solve()
+        self.is_random_challenge = False
+        self.random_seed = None
         self.current_level_index = level_index
         self.selected_level_index = level_index
         if self.selected_mode == "advanced":
@@ -449,6 +474,91 @@ class ArrowEscapeApp:
     def levels_for_mode(self):
         """返回当前模式对应的关卡集合。"""
         return ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
+
+    def start_random_challenge(self, seed: int | None = None) -> None:
+        """按当前模式生成并验证一局全新的可通关挑战。"""
+        self.stop_auto_solve()
+        seed = seed if seed is not None else random.SystemRandom().randrange(1, 2**31)
+        rng = random.Random(seed)
+        if self.selected_mode == "advanced":
+            rows, cols = rng.choice(((16, 12), (18, 14), (20, 16)))
+            level = make_dense_advanced_level(
+                "随机霓虹迷阵", rows, cols, seed, color_offset=seed % 11, attempts=16
+            )
+            if solve_advanced(level) is None:
+                raise RuntimeError("随机进阶关卡生成失败")
+            self.game = AdvancedBoard(level)
+        else:
+            size = rng.choice((6, 7, 8, 9))
+            board = make_dense_board(size, size, seed)
+            if solve(board) is None:
+                raise RuntimeError("随机基础关卡生成失败")
+            self.game = ArrowBoard(board)
+        self.is_random_challenge = True
+        self.random_seed = seed
+        self.reset_level_stats()
+        self.selected_cell = None
+        self.hint_cell = None
+        self.hint_arrow_id = None
+        self.animating = False
+        self.animation = None
+        self.clear_confirm_visible = False
+        self.progress_notice = ""
+        self.current_screen = "game"
+        self.set_feedback(f"随机关卡已生成 · 种子 {seed}", "success")
+
+    def start_auto_solve(self) -> None:
+        """求解当前残局并启动逐步动画演示。"""
+        if self.animating or self.auto_solving or self.current_screen != "game":
+            return
+        if self.selected_mode == "advanced":
+            solution: list[object] | None = solve_advanced(
+                self.game.level, self.game.active_ids
+            )
+        else:
+            solution = solve(self.game.board)
+        if solution is None:
+            self.set_feedback("当前局面没有可行解", "danger")
+            return
+        if not solution:
+            self.set_feedback("当前棋盘已经清空", "success")
+            return
+        self.auto_solution = list(solution)
+        self.auto_total_steps = len(self.auto_solution)
+        self.auto_solving = True
+        self.auto_next_delay = 0.0
+        self.set_feedback(f"AI 已找到 {self.auto_total_steps} 步解法，开始演示", "success")
+        self.run_next_solution_step()
+
+    def run_next_solution_step(self) -> None:
+        """执行自动解序列中的下一步，并复用正常点击动画。"""
+        if not self.auto_solving or self.animating:
+            return
+        if not self.auto_solution:
+            self.stop_auto_solve()
+            return
+        move = self.auto_solution.pop(0)
+        if self.selected_mode == "advanced":
+            arrow_id = int(move)
+            if arrow_id not in self.game.removable_arrows():
+                self.stop_auto_solve()
+                self.set_feedback("局面发生变化，AI 演示已停止", "danger")
+                return
+            row, col = self.game.path(arrow_id).cells[-1]
+        else:
+            row, col = move  # type: ignore[misc]
+            if (row, col) not in self.game.removable_arrows():
+                self.stop_auto_solve()
+                self.set_feedback("局面发生变化，AI 演示已停止", "danger")
+                return
+        self.on_board_click_pos(tuple(map(int, self.cell_center(row, col))))
+
+    def stop_auto_solve(self) -> None:
+        """清空自动演示状态。"""
+        self.auto_solving = False
+        self.auto_solution = []
+        self.auto_total_steps = 0
+        self.auto_next_delay = 0.0
 
     def load_progress(self) -> bool:
         """读取本地 JSON 存档；数据缺失或损坏时保留默认进度。"""
@@ -566,14 +676,16 @@ class ArrowEscapeApp:
         else:
             self.earned_stars = 1
         self.total_score += self.level_score
-        records = self.level_records[self.selected_mode]
-        records[self.current_level_index] = max(
-            records.get(self.current_level_index, 0), self.earned_stars
-        )
+        if not self.is_random_challenge:
+            records = self.level_records[self.selected_mode]
+            records[self.current_level_index] = max(
+                records.get(self.current_level_index, 0), self.earned_stars
+            )
         self.level_scored = True
         self.save_progress()
 
     def retry_after_failure(self) -> None:
+        self.stop_auto_solve()
         self.animating = False
         self.animation = None
         self.game.restart()
@@ -588,6 +700,7 @@ class ArrowEscapeApp:
         if self.animating:
             self.set_feedback("请等待动画结束后再重新开始", "warning")
             return
+        self.stop_auto_solve()
         self.game.restart()
         self.reset_level_stats()
         self.selected_cell = None
@@ -731,12 +844,17 @@ class ArrowEscapeApp:
         self.animation = None
         self.selected_cell = None
         if self.game.remaining_arrows() == 0:
+            self.stop_auto_solve()
             self.finish_level_stats()
-            if self.current_level_index == len(LEVELS) - 1:
+            if self.is_random_challenge:
+                self.current_screen = "random_clear"
+            elif self.current_level_index == len(LEVELS) - 1:
                 self.show_all_clear()
             else:
                 self.show_level_clear()
         else:
+            if self.auto_solving:
+                self.auto_next_delay = 0.22
             self.set_feedback(
                 f"成功！第 {row + 1} 行第 {col + 1} 列箭头已飞出",
                 "success",
@@ -749,12 +867,17 @@ class ArrowEscapeApp:
         self.animation = None
         self.hint_arrow_id = None
         if self.game.remaining_arrows() == 0:
+            self.stop_auto_solve()
             self.finish_level_stats()
-            if self.current_level_index == len(ADVANCED_LEVELS) - 1:
+            if self.is_random_challenge:
+                self.current_screen = "random_clear"
+            elif self.current_level_index == len(ADVANCED_LEVELS) - 1:
                 self.show_all_clear()
             else:
                 self.show_level_clear()
         else:
+            if self.auto_solving:
+                self.auto_next_delay = 0.22
             self.set_feedback("成功！整条折线箭头已经飞出", "success")
 
     def set_feedback(self, message: str, kind: str) -> None:
@@ -769,7 +892,7 @@ class ArrowEscapeApp:
             self.draw_level_select_screen()
         elif self.current_screen == "game":
             self.draw_game_screen()
-        elif self.current_screen in {"level_clear", "game_over", "all_clear"}:
+        elif self.current_screen in {"level_clear", "game_over", "all_clear", "random_clear"}:
             self.draw_result_screen(self.current_screen)
 
     def draw_arrow_pattern(self) -> None:
@@ -983,9 +1106,10 @@ class ArrowEscapeApp:
 
         self.level_back_button.draw(self, mouse)
         self.clear_progress_button.draw(self, mouse)
+        self.random_challenge_button.draw(self, mouse)
         if self.progress_notice:
             notice_color = GREEN if "已清除" in self.progress_notice else RED
-            self.draw_text(self.progress_notice, 300, 790, 13, notice_color, center=True, bold=True)
+            self.draw_text(self.progress_notice, 300, 184, 13, notice_color, center=True, bold=True)
         if self.clear_confirm_visible:
             self.draw_clear_progress_modal()
 
@@ -1020,12 +1144,16 @@ class ArrowEscapeApp:
         pygame.draw.circle(glow, (50, 201, 177, 18), (590, 560), 240)
         self.screen.blit(glow, (0, 0))
         pygame.draw.line(self.screen, (126, 135, 168), (0, 145), (WINDOW_WIDTH, 145), 2)
-        self.restart_button.enabled = not self.animating
-        self.home_button.enabled = not self.animating
+        self.restart_button.enabled = not self.animating and not self.auto_solving
+        self.home_button.enabled = not self.animating and not self.auto_solving
         self.restart_button.draw(self, mouse)
         self.home_button.draw(self, mouse)
-        self.draw_text(f"关卡 {self.current_level_index + 1}", 300, 20, 27, WHITE, center=True, bold=True)
-        level_name = (ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS)[self.current_level_index].name
+        title = "随机挑战" if self.is_random_challenge else f"关卡 {self.current_level_index + 1}"
+        self.draw_text(title, 300, 20, 27, WHITE, center=True, bold=True)
+        if self.is_random_challenge:
+            level_name = f"种子 {self.random_seed}"
+        else:
+            level_name = (ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS)[self.current_level_index].name
         self.draw_text(level_name, 300, 50, 12, (180, 190, 220), center=True, bold=True)
         heart_x = 270
         for index in range(MAX_MISTAKES):
@@ -1056,8 +1184,17 @@ class ArrowEscapeApp:
             hint_color = (255, 211, 75) if self.hint_rect.collidepoint(mouse) else (255, 193, 55)
         pygame.draw.circle(self.screen, hint_color, (84, 720), 24)
         self.draw_text("?", 84, 718, 25, WHITE, center=True, bold=True)
-        helper_text = "点击整条彩色折线" if self.selected_mode == "advanced" else "观察同行同列"
-        self.draw_text(helper_text, 300, 742, 13, (180, 188, 216), center=True)
+        ai_enabled = not self.animating and not self.auto_solving
+        ai_color = (76, 111, 225) if ai_enabled else (91, 95, 119)
+        pygame.draw.rect(self.screen, ai_color, self.auto_solve_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (135, 201, 239), self.auto_solve_rect, width=2, border_radius=14)
+        if self.auto_solving:
+            completed = self.auto_total_steps - len(self.auto_solution)
+            ai_text = f"AI {completed}/{self.auto_total_steps}"
+        else:
+            ai_text = "AI 求解"
+        self.draw_text(ai_text, self.auto_solve_rect.centerx, self.auto_solve_rect.centery,
+                       16, WHITE, center=True, bold=True)
         mode_name = "进阶模式" if self.selected_mode == "advanced" else "基础模式"
         self.draw_text(mode_name, 516, 752, 16, WHITE, center=True, bold=True)
         pygame.draw.rect(self.screen, (45, 184, 189), (494, 699, 44, 44), width=4, border_radius=8)
@@ -1228,11 +1365,18 @@ class ArrowEscapeApp:
             eyebrow, title = "TRY AGAIN", "本关挑战失败"
             note = "失误机会已经耗尽，观察路线后再试一次"
             button = self.retry_button
+        elif kind == "random_clear":
+            circle_color, accent, icon_key = GREEN_SOFT, GREEN, "check"
+            eyebrow, title = "RANDOM CLEAR", "随机挑战成功！"
+            note = f"种子 {self.random_seed} 的箭阵已全部清空"
+            self.replay_button.text = "再来一局"
+            button = self.replay_button
         elif kind == "all_clear":
             circle_color, accent, icon_key = YELLOW_SOFT, YELLOW, "star_yellow"
             eyebrow, title = "ALL CLEAR", "全部通关！"
             level_count = len(ADVANCED_LEVELS) if self.selected_mode == "advanced" else len(LEVELS)
             note = f"太棒了！你已完成全部 {level_count} 个原创关卡"
+            self.replay_button.text = "再玩一次"
             button = self.replay_button
         else:
             circle_color, accent, icon_key = GREEN_SOFT, GREEN, "check"

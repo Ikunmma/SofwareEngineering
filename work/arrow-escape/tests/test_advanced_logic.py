@@ -70,6 +70,18 @@ class AdvancedBoardTest(unittest.TestCase):
                 self.assertTrue(board.remove_arrow(arrow_id))
             self.assertEqual(board.remaining_arrows(), 0)
 
+    def test_solver_accepts_partially_cleared_advanced_board(self) -> None:
+        level = ADVANCED_LEVELS[0]
+        board = AdvancedBoard(level)
+        first = board.removable_arrows()[0]
+        self.assertTrue(board.remove_arrow(first))
+        solution = solve_advanced(level, board.active_ids)
+        self.assertIsNotNone(solution)
+        self.assertEqual(len(solution), board.remaining_arrows())
+        for arrow_id in solution:
+            self.assertTrue(board.remove_arrow(arrow_id))
+        self.assertEqual(board.remaining_arrows(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

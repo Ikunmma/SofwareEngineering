@@ -88,8 +88,10 @@ class AdvancedBoard:
         return True
 
 
-def solve_advanced(level: AdvancedLevel) -> list[int] | None:
-    """返回进阶关卡的一条完整消除顺序。"""
+def solve_advanced(
+    level: AdvancedLevel, active_ids: set[int] | frozenset[int] | None = None,
+) -> list[int] | None:
+    """返回进阶关卡或其当前剩余局面的一条完整消除顺序。"""
     failed: set[frozenset[int]] = set()
 
     def search(active: frozenset[int]) -> tuple[int, ...] | None:
@@ -106,7 +108,10 @@ def solve_advanced(level: AdvancedLevel) -> list[int] | None:
         failed.add(active)
         return None
 
-    solution = search(frozenset(range(len(level.paths))))
+    initial = frozenset(range(len(level.paths))) if active_ids is None else frozenset(active_ids)
+    if not initial.issubset(range(len(level.paths))):
+        raise ValueError("剩余箭头编号越界")
+    solution = search(initial)
     return None if solution is None else list(solution)
 
 
