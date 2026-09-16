@@ -604,6 +604,13 @@ class PygameStateTest(unittest.TestCase):
         self.app.start_new_game()
         self.app.draw()
 
+    def test_chinese_text_uses_bundled_font_without_system_font_scan(self) -> None:
+        self.app._font_cache.clear()
+        with patch.object(pygame.font, "SysFont", side_effect=RuntimeError("system font scan")):
+            self.app.draw_text("关卡与提示", 10, 10, 18)
+            self.app.draw_text("通关成功", 10, 40, 20, bold=True)
+        self.assertTrue(main.CHINESE_FONT_FILE.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

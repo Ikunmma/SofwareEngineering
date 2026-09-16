@@ -9,5 +9,6 @@ save_data.json
 save_data.json.tmp
 build/
 dist/
+dist-fixed/
 *.spec
 !ArrowEscape.spec

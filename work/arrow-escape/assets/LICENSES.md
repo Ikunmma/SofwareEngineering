@@ -9,3 +9,7 @@
 - 用途：按钮、箭头、星星、成功/失败图标与英文字体
 
 游戏关卡、程序代码和界面排版均为本项目独立完成，没有使用原商业游戏的素材。
+
+## 中文字体
+
+`fonts/NotoSansSC-Regular.otf` 来自 [Noto Sans CJK 官方仓库](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/SC)，采用 SIL Open Font License 1.1。完整许可证见 `fonts/OFL.txt`。游戏直接从此字体文件加载中文，不依赖 Windows 系统字体注册表。

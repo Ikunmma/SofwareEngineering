@@ -47,6 +47,7 @@ SHADOW = (78, 95, 139, 35)
 PROJECT_DIR = Path(__file__).resolve().parent
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_DIR))
 ASSET_DIR = RESOURCE_ROOT / "assets" / "kenney_ui"
+CHINESE_FONT_FILE = RESOURCE_ROOT / "assets" / "fonts" / "NotoSansSC-Regular.otf"
 
 
 def default_save_file() -> Path:
@@ -385,7 +386,8 @@ class ArrowEscapeApp:
             if display:
                 font = pygame.font.Font(ASSET_DIR / "Kenney Future.ttf", size)
             else:
-                font = pygame.font.SysFont("Microsoft YaHei UI", size, bold=bold)
+                font = pygame.font.Font(CHINESE_FONT_FILE, size)
+                font.set_bold(bold)
             self._font_cache[key] = font
         return self._font_cache[key]
 

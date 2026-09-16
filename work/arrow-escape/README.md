@@ -39,7 +39,7 @@ py -m pip install -r requirements-build.txt
 py -m PyInstaller --noconfirm --clean ArrowEscape.spec
 ```
 
-EXE 已内置 Pygame 图片素材，不需要把 `assets` 文件夹放在程序旁边。源码版的进度保存在项目目录 `save_data.json`；EXE 版的进度保存在 `%LOCALAPPDATA%\ArrowEscape\save_data.json`，避免单文件程序退出后丢失存档。
+EXE 已内置 Pygame 图片素材和中文字体，不需要把 `assets` 文件夹放在程序旁边。源码版的进度保存在项目目录 `save_data.json`；EXE 版的进度保存在 `%LOCALAPPDATA%\ArrowEscape\save_data.json`，避免单文件程序退出后丢失存档。
 
 ## 游戏操作
 
@@ -99,7 +99,7 @@ EXE 已内置 Pygame 图片素材，不需要把 `assets` 文件夹放在程序�
 
 ## 界面与素材
 
-项目使用 Pygame 绘制渐变背景、卡片、棋盘、状态栏和动画；按钮、方向箭头、星星及英文字体选自 [Kenney UI Pack](https://kenney.nl/assets/ui-pack)，采用 CC0 1.0 许可。完整许可说明见 `assets/LICENSES.md`。
+项目使用 Pygame 绘制渐变背景、卡片、棋盘、状态栏和动画；按钮、方向箭头、星星及英文字体选自 [Kenney UI Pack](https://kenney.nl/assets/ui-pack)，采用 CC0 1.0 许可。中文字体使用 SIL OFL 1.1 授权的 [Noto Sans SC](https://github.com/notofonts/noto-cjk)，避免读取玩家电脑的系统字体列表。完整许可说明见 `assets/LICENSES.md`。
 
 核心玩法参考了[微信小游戏《一箭又一箭》应用宝页面](https://sj.qq.com/appdetail/wx69949b45b793b612)。本项目仅借鉴“点击无阻挡箭头使其飞出”的基础规则和深色点阵棋盘氛围；代码、单格箭头关卡和界面排版均独立完成，也未使用原游戏的商业美术素材。
 
