@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +43,8 @@ GRID = (218, 226, 244)
 SHADOW = (78, 95, 139, 35)
 
 ASSET_DIR = Path(__file__).resolve().parent / "assets" / "kenney_ui"
+SAVE_FILE = Path(__file__).resolve().parent / "save_data.json"
+SAVE_VERSION = 1
 BOARD_ROWS = 6
 BOARD_COLS = 6
 CELL_SIZE = 72
@@ -111,7 +114,8 @@ class Button:
 class ArrowEscapeApp:
     """管理页面、游戏状态、动画和绘制。"""
 
-    def __init__(self, *, create_display: bool = True) -> None:
+    def __init__(self, *, create_display: bool = True,
+                 save_path: str | Path | None = None) -> None:
         pygame.init()
         pygame.font.init()
         flags = 0 if create_display else pygame.HIDDEN
@@ -133,6 +137,8 @@ class ArrowEscapeApp:
         self.level_scored = False
         self.hints_remaining = MAX_HINTS
         self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
+        self.save_path = Path(save_path) if save_path is not None else SAVE_FILE
+        self.load_progress()
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
         self.animation: dict[str, object] | None = None
@@ -304,9 +310,11 @@ class ArrowEscapeApp:
             elif self.level_mode_basic_rect.collidepoint(pos):
                 self.selected_mode = "basic"
                 self.selected_level_index = 0
+                self.save_progress()
             elif self.level_mode_advanced_rect.collidepoint(pos):
                 self.selected_mode = "advanced"
                 self.selected_level_index = 0
+                self.save_progress()
             else:
                 for index, rect in enumerate(self.level_card_rects):
                     if rect.collidepoint(pos):
@@ -383,7 +391,6 @@ class ArrowEscapeApp:
             self.game = AdvancedBoard(levels[self.current_level_index])
         else:
             self.game = ArrowBoard(levels[self.current_level_index].board)
-        self.total_score = 0
         self.reset_level_stats()
         self.selected_cell = None
         self.hint_cell = None
@@ -393,6 +400,7 @@ class ArrowEscapeApp:
         self.help_visible = False
         self.current_screen = "game"
         self.set_feedback("观察方向，找到第一支能飞出的箭", "normal")
+        self.save_progress()
 
     def load_level(self, level_index: int) -> None:
         levels = self.levels_for_mode()
@@ -424,6 +432,75 @@ class ArrowEscapeApp:
     def levels_for_mode(self):
         """返回当前模式对应的关卡集合。"""
         return ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS
+
+    def load_progress(self) -> bool:
+        """读取本地 JSON 存档；数据缺失或损坏时保留默认进度。"""
+        try:
+            data = json.loads(self.save_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
+                return False
+
+            mode = data.get("selected_mode")
+            if mode in {"basic", "advanced"}:
+                self.selected_mode = mode
+
+            level = data.get("selected_level", 0)
+            level_count = len(ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS)
+            if isinstance(level, int) and not isinstance(level, bool):
+                self.selected_level_index = min(max(level, 0), level_count - 1)
+
+            score = data.get("total_score", 0)
+            if isinstance(score, int) and not isinstance(score, bool):
+                self.total_score = max(0, score)
+
+            raw_records = data.get("level_records", {})
+            if isinstance(raw_records, dict):
+                for record_mode, level_count in (
+                    ("basic", len(LEVELS)), ("advanced", len(ADVANCED_LEVELS))
+                ):
+                    raw_mode = raw_records.get(record_mode, {})
+                    if not isinstance(raw_mode, dict):
+                        continue
+                    cleaned: dict[int, int] = {}
+                    for raw_index, raw_stars in raw_mode.items():
+                        try:
+                            index = int(raw_index)
+                        except (TypeError, ValueError):
+                            continue
+                        if (0 <= index < level_count and isinstance(raw_stars, int)
+                                and not isinstance(raw_stars, bool) and 1 <= raw_stars <= 3):
+                            cleaned[index] = raw_stars
+                    self.level_records[record_mode] = cleaned
+            return True
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            return False
+
+    def save_progress(self) -> bool:
+        """原子写入累计分数、最佳星级和上次选择，失败时不中断游戏。"""
+        data = {
+            "version": SAVE_VERSION,
+            "selected_mode": self.selected_mode,
+            "selected_level": self.selected_level_index,
+            "total_score": self.total_score,
+            "level_records": {
+                mode: {str(index): stars for index, stars in records.items()}
+                for mode, records in self.level_records.items()
+            },
+        }
+        temporary = self.save_path.with_suffix(self.save_path.suffix + ".tmp")
+        try:
+            self.save_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            temporary.replace(self.save_path)
+            return True
+        except (OSError, UnicodeError, TypeError, ValueError):
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
 
     def reset_level_stats(self) -> None:
         """重置本关计时、分数和星级。"""
@@ -460,6 +537,7 @@ class ArrowEscapeApp:
             records.get(self.current_level_index, 0), self.earned_stars
         )
         self.level_scored = True
+        self.save_progress()
 
     def retry_after_failure(self) -> None:
         self.animating = False

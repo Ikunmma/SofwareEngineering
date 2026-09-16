@@ -2,6 +2,8 @@
 
 import os
 import sys
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,11 +25,14 @@ from advanced_levels import ADVANCED_LEVELS  # noqa: E402
 
 class PygameStateTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.app = main.ArrowEscapeApp(create_display=False)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.save_path = Path(self.temp_dir.name) / "save_data.json"
+        self.app = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
         self.app.start_new_game()
 
     def tearDown(self) -> None:
         pygame.quit()
+        self.temp_dir.cleanup()
 
     def click_cell(self, row: int, col: int) -> None:
         self.app.on_board_click_pos(tuple(map(int, self.app.cell_center(row, col))))
@@ -266,6 +271,45 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.level_records["advanced"], {})
         self.app.current_screen = "level_select"
         self.app.draw()
+
+    def test_progress_is_saved_and_restored(self) -> None:
+        self.app.selected_mode = "advanced"
+        self.app.selected_level_index = 3
+        self.app.total_score = 2460
+        self.app.level_records = {"basic": {0: 3, 2: 1}, "advanced": {1: 2}}
+        self.assertTrue(self.app.save_progress())
+
+        restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
+        self.assertEqual(restored.selected_mode, "advanced")
+        self.assertEqual(restored.selected_level_index, 3)
+        self.assertEqual(restored.total_score, 2460)
+        self.assertEqual(restored.level_records["basic"], {0: 3, 2: 1})
+        self.assertEqual(restored.level_records["advanced"], {1: 2})
+
+    def test_corrupt_progress_file_falls_back_to_defaults(self) -> None:
+        self.save_path.write_text("{not valid json", encoding="utf-8")
+        restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
+        self.assertEqual(restored.selected_mode, "basic")
+        self.assertEqual(restored.selected_level_index, 0)
+        self.assertEqual(restored.total_score, 0)
+        self.assertEqual(restored.level_records, {"basic": {}, "advanced": {}})
+
+    def test_invalid_progress_values_are_ignored_or_clamped(self) -> None:
+        self.save_path.write_text(json.dumps({
+            "version": main.SAVE_VERSION,
+            "selected_mode": "advanced",
+            "selected_level": 999,
+            "total_score": -50,
+            "level_records": {
+                "basic": {"0": 3, "1": 9, "bad": 2},
+                "advanced": {"2": 2, "99": 3},
+            },
+        }), encoding="utf-8")
+        restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
+        self.assertEqual(restored.selected_level_index, len(ADVANCED_LEVELS) - 1)
+        self.assertEqual(restored.total_score, 0)
+        self.assertEqual(restored.level_records["basic"], {0: 3})
+        self.assertEqual(restored.level_records["advanced"], {2: 2})
 
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2

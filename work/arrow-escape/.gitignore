@@ -5,6 +5,8 @@ __pycache__/
 .idea/
 .vscode/
 *.log
+save_data.json
+save_data.json.tmp
 build/
 dist/
 *.spec
