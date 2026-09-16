@@ -25,7 +25,6 @@ MAX_HINTS = 3
 STARTING_SCORE = 0
 ARROW_SCORE = 100
 COLLISION_PENALTY = 100
-HINT_PENALTY = 50
 
 BACKGROUND_TOP = (239, 244, 255)
 BACKGROUND_BOTTOM = (220, 230, 250)
@@ -940,8 +939,10 @@ class ArrowEscapeApp:
             row, col = self.hint_cell
             self.set_feedback(f"提示：点击第 {row + 1} 行第 {col + 1} 列的高亮箭头", "success")
         self.hints_remaining -= 1
-        self.level_score = max(0, self.level_score - HINT_PENALTY)
+        self.mistakes_remaining -= 1
         self.play_sound("hint")
+        if self.mistakes_remaining <= 0:
+            self.show_game_over()
 
     def on_board_click_pos(self, position: tuple[int, int]) -> None:
         if self.animating:
@@ -1396,6 +1397,30 @@ class ArrowEscapeApp:
         self.draw_text(button.text, button.rect.centerx, button.rect.centery,
                        17, text_color, center=True, bold=True)
 
+    def draw_mode_badge_icon(self) -> None:
+        """基础模式显示四向箭头，进阶模式显示折线路径。"""
+        color = (74, 229, 213)
+        center_x, center_y = 516, 717
+        if self.selected_mode == "advanced":
+            points = ((501, 724), (501, 708), (515, 708), (515, 722), (527, 722))
+            pygame.draw.lines(self.screen, color, False, points, 4)
+            pygame.draw.polygon(self.screen, color,
+                                ((532, 722), (524, 716), (524, 728)))
+            return
+        pygame.draw.circle(self.screen, color, (center_x, center_y), 17, width=2)
+        pygame.draw.line(self.screen, color, (center_x, center_y + 9),
+                         (center_x, center_y - 9), 3)
+        pygame.draw.polygon(self.screen, color,
+                            ((center_x, center_y - 13),
+                             (center_x - 5, center_y - 6),
+                             (center_x + 5, center_y - 6)))
+        pygame.draw.line(self.screen, color, (center_x - 9, center_y),
+                         (center_x + 9, center_y), 3)
+        pygame.draw.polygon(self.screen, color,
+                            ((center_x + 13, center_y),
+                             (center_x + 6, center_y - 5),
+                             (center_x + 6, center_y + 5)))
+
     def draw_game_screen(self) -> None:
         mouse = pygame.mouse.get_pos()
         self.screen.fill((61, 64, 89))
@@ -1412,11 +1437,6 @@ class ArrowEscapeApp:
         self.draw_sound_button(mouse)
         title = "随机挑战" if self.is_random_challenge else f"关卡 {self.current_level_index + 1}"
         self.draw_text(title, 300, 20, 27, WHITE, center=True, bold=True)
-        if self.is_random_challenge:
-            level_name = f"种子 {self.random_seed}"
-        else:
-            level_name = (ADVANCED_LEVELS if self.selected_mode == "advanced" else LEVELS)[self.current_level_index].name
-        self.draw_text(level_name, 300, 50, 12, (180, 190, 220), center=True, bold=True)
         heart_x = 270
         for index in range(MAX_MISTAKES):
             color = (255, 81, 88) if index < self.mistakes_remaining else (93, 95, 119)
@@ -1431,15 +1451,7 @@ class ArrowEscapeApp:
         self.draw_board()
         self.draw_effects()
 
-        feedback_colors = {
-            "normal": (135, 201, 239), "success": (103, 224, 168),
-            "warning": (255, 204, 90), "danger": (255, 116, 124),
-        }
         pygame.draw.line(self.screen, (126, 135, 168), (0, 660), (WINDOW_WIDTH, 660), 2)
-        self.draw_text(
-            self.feedback, 300, 690, 14,
-            feedback_colors.get(self.feedback_kind, (216, 221, 238)), center=True, bold=True,
-        )
         hint_panel = (67, 72, 99) if self.hints_remaining > 0 else (60, 63, 82)
         pygame.draw.rect(self.screen, (39, 42, 62), self.hint_rect.move(0, 4), border_radius=18)
         pygame.draw.rect(self.screen, hint_panel, self.hint_rect, border_radius=18)
@@ -1476,8 +1488,7 @@ class ArrowEscapeApp:
         pygame.draw.rect(self.screen, (105, 115, 151), self.mode_badge_rect, width=2, border_radius=18)
         self.draw_text(mode_name, self.mode_badge_rect.centerx, 752, 15,
                        WHITE, center=True, bold=True)
-        pygame.draw.rect(self.screen, (74, 229, 213), (499, 700, 34, 34), width=3, border_radius=8)
-        self.draw_text("#", 516, 716, 20, (74, 229, 213), center=True, bold=True)
+        self.draw_mode_badge_icon()
 
     def draw_board(self) -> None:
         left, top, cell_size, width, height = self.board_geometry()

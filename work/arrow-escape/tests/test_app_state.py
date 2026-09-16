@@ -140,12 +140,12 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(self.app.game.remaining_arrows(), before - 1)
 
     def test_hint_selects_a_currently_removable_arrow(self) -> None:
-        initial_score = self.app.level_score
+        initial_lives = self.app.mistakes_remaining
         self.app.show_hint()
         self.assertIn(self.app.hint_cell, self.app.game.removable_arrows())
         self.assertIn("提示", self.app.feedback)
         self.assertEqual(self.app.hints_remaining, main.MAX_HINTS - 1)
-        self.assertEqual(self.app.level_score, max(0, initial_score - main.HINT_PENALTY))
+        self.assertEqual(self.app.mistakes_remaining, initial_lives - 1)
         self.app.selected_mode = "advanced"
         self.app.start_new_game()
         self.app.show_hint()
@@ -156,12 +156,15 @@ class PygameStateTest(unittest.TestCase):
         for _ in range(main.MAX_HINTS):
             self.app.show_hint()
         self.assertEqual(self.app.hints_remaining, 0)
+        self.assertEqual(self.app.mistakes_remaining, 0)
+        self.assertEqual(self.app.current_screen, "game_over")
         previous_hint = self.app.hint_cell
         self.app.show_hint()
         self.assertEqual(self.app.hint_cell, previous_hint)
         self.assertIn("用完", self.app.feedback)
         self.app.restart_board()
         self.assertEqual(self.app.hints_remaining, main.MAX_HINTS)
+        self.assertEqual(self.app.mistakes_remaining, main.MAX_MISTAKES)
 
     def test_all_advanced_levels_clear_through_mouse_events_and_animation(self) -> None:
         self.app.selected_mode = "advanced"
@@ -169,12 +172,7 @@ class PygameStateTest(unittest.TestCase):
         for index, level in enumerate(ADVANCED_LEVELS):
             self.assertEqual(self.app.current_level_index, index)
             for _ in level.paths:
-                if self.app.hints_remaining:
-                    self.app.handle_event(pygame.event.Event(
-                        pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.hint_rect.center))
-                    ident = self.app.hint_arrow_id
-                else:
-                    ident = self.app.game.removable_arrows()[0]
+                ident = self.app.game.removable_arrows()[0]
                 self.assertIsNotNone(ident)
                 head = self.app.game.path(ident).cells[-1]
                 self.app.handle_event(pygame.event.Event(
