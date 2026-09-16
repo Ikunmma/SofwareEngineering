@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -296,6 +297,16 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(restored.level_records["basic"], {0: 3, 2: 1})
         self.assertEqual(restored.level_records["advanced"], {1: 2})
         self.assertEqual(restored.unlocked_levels, {"basic": 4, "advanced": 4})
+
+    def test_packaged_app_uses_local_app_data_for_save(self) -> None:
+        local_data = Path(self.temp_dir.name) / "LocalAppData"
+        with patch.object(main.sys, "frozen", True, create=True), patch.dict(
+            os.environ, {"LOCALAPPDATA": str(local_data)}
+        ):
+            self.assertEqual(
+                main.default_save_file(),
+                local_data / "ArrowEscape" / "save_data.json",
+            )
 
     def test_corrupt_progress_file_falls_back_to_defaults(self) -> None:
         self.save_path.write_text("{not valid json", encoding="utf-8")

@@ -23,6 +23,24 @@ py main.py
 
 如果电脑使用 `python` 命令，也可以把上面两条命令中的 `py` 换成 `python`。
 
+## 打包为 Windows EXE
+
+双击 `build_exe.bat`，脚本会安装打包工具并生成单文件程序：
+
+```text
+dist/ArrowEscape.exe
+```
+
+也可以在项目目录手动执行：
+
+```bash
+py -m pip install -r requirements.txt
+py -m pip install -r requirements-build.txt
+py -m PyInstaller --noconfirm --clean ArrowEscape.spec
+```
+
+EXE 已内置 Pygame 图片素材，不需要把 `assets` 文件夹放在程序旁边。源码版的进度保存在项目目录 `save_data.json`；EXE 版的进度保存在 `%LOCALAPPDATA%\ArrowEscape\save_data.json`，避免单文件程序退出后丢失存档。
+
 ## 游戏操作
 
 - 主页点击“开始游戏”，进入冒险地图；

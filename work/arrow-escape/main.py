@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import random
 import json
+import os
+import sys
 from array import array
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,8 +44,21 @@ YELLOW_SOFT = (255, 246, 218)
 GRID = (218, 226, 244)
 SHADOW = (78, 95, 139, 35)
 
-ASSET_DIR = Path(__file__).resolve().parent / "assets" / "kenney_ui"
-SAVE_FILE = Path(__file__).resolve().parent / "save_data.json"
+PROJECT_DIR = Path(__file__).resolve().parent
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_DIR))
+ASSET_DIR = RESOURCE_ROOT / "assets" / "kenney_ui"
+
+
+def default_save_file() -> Path:
+    """源码版存项目目录，打包版存用户本地数据目录。"""
+    if getattr(sys, "frozen", False):
+        local_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_data) if local_data else Path.home() / "AppData" / "Local"
+        return base / "ArrowEscape" / "save_data.json"
+    return PROJECT_DIR / "save_data.json"
+
+
+SAVE_FILE = default_save_file()
 SAVE_VERSION = 1
 BOARD_ROWS = 6
 BOARD_COLS = 6
