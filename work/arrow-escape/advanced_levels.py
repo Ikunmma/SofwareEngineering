@@ -103,6 +103,7 @@ def make_dense_advanced_level(
     seed: int,
     *,
     color_offset: int = 0,
+    attempts: int = 48,
 ) -> AdvancedLevel:
     """逆序放置随机游走折线；逆序消除即为一条已知可行解。
 
@@ -111,7 +112,7 @@ def make_dense_advanced_level(
     """
     best: list[PathData] = []
     best_coverage = 0
-    for attempt in range(48):
+    for attempt in range(attempts):
         rng = Random(seed * 101 + attempt)
         free = {(r, c) for r in range(rows) for c in range(cols)}
         paths: list[PathData] = []
@@ -165,6 +166,15 @@ ADVANCED_LEVEL_2 = make_dense_advanced_level(
 ADVANCED_LEVEL_3 = make_dense_advanced_level(
     "霓虹迷阵", 20, 16, 11, color_offset=7
 )
+ADVANCED_LEVEL_4 = make_dense_advanced_level(
+    "幻彩回廊", 22, 18, 17, color_offset=2, attempts=32
+)
+ADVANCED_LEVEL_5 = make_dense_advanced_level(
+    "终极迷宫", 24, 20, 23, color_offset=5, attempts=32
+)
 
 
-ADVANCED_LEVELS = (ADVANCED_LEVEL_1, ADVANCED_LEVEL_2, ADVANCED_LEVEL_3)
+ADVANCED_LEVELS = (
+    ADVANCED_LEVEL_1, ADVANCED_LEVEL_2, ADVANCED_LEVEL_3,
+    ADVANCED_LEVEL_4, ADVANCED_LEVEL_5,
+)

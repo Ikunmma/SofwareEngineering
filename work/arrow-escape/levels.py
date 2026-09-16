@@ -57,11 +57,15 @@ def make_dense_board(rows: int, cols: int, seed: int) -> BoardData:
 LEVEL_1: BoardData = make_dense_board(5, 5, 3)
 LEVEL_2: BoardData = make_dense_board(6, 6, 7)
 LEVEL_3: BoardData = make_dense_board(7, 7, 11)
+LEVEL_4: BoardData = make_dense_board(8, 8, 17)
+LEVEL_5: BoardData = make_dense_board(9, 9, 23)
 
 LEVELS = (
     Level("初识方向", LEVEL_1),
     Level("交错路线", LEVEL_2),
     Level("箭阵迷踪", LEVEL_3),
+    Level("四向风暴", LEVEL_4),
+    Level("终极箭阵", LEVEL_5),
 )
 
 # 保留这个名称供已有测试与外部代码使用。

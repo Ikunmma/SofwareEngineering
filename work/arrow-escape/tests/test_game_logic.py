@@ -70,6 +70,10 @@ class ArrowBoardTest(unittest.TestCase):
 
 
 class SolverTest(unittest.TestCase):
+    def test_basic_level_grids_increase(self) -> None:
+        sizes = [(len(level.board), len(level.board[0])) for level in LEVELS]
+        self.assertEqual(sizes, [(5, 5), (6, 6), (7, 7), (8, 8), (9, 9)])
+
     def test_all_levels_have_executable_solution(self) -> None:
         for level in LEVELS:
             with self.subTest(level=level.name):
