@@ -19,9 +19,11 @@ WINDOW_WIDTH = 600
 WINDOW_HEIGHT = 820
 FPS = 60
 MAX_MISTAKES = 3
+MAX_HINTS = 3
 STARTING_SCORE = 0
 ARROW_SCORE = 100
 COLLISION_PENALTY = 100
+HINT_PENALTY = 50
 
 BACKGROUND_TOP = (239, 244, 255)
 BACKGROUND_BOTTOM = (220, 230, 250)
@@ -129,6 +131,7 @@ class ArrowEscapeApp:
         self.earned_stars = 0
         self.par_time = 50.0
         self.level_scored = False
+        self.hints_remaining = MAX_HINTS
         self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
         self.selected_cell: tuple[int, int] | None = None
         self.animating = False
@@ -429,6 +432,7 @@ class ArrowEscapeApp:
         self.level_score = STARTING_SCORE
         self.earned_stars = 0
         self.level_scored = False
+        self.hints_remaining = MAX_HINTS
         seconds_per_arrow = 4.0 if self.selected_mode == "advanced" else 2.0
         self.par_time = max(30.0, self.game.remaining_arrows() * seconds_per_arrow)
 
@@ -518,6 +522,9 @@ class ArrowEscapeApp:
         """高亮并说明一个当前可以安全消除的箭头。"""
         if self.animating:
             return
+        if self.hints_remaining <= 0:
+            self.set_feedback("本关提示次数已经用完", "warning")
+            return
         if self.selected_mode == "advanced":
             choices = self.game.removable_arrows()
             if not choices:
@@ -527,7 +534,7 @@ class ArrowEscapeApp:
             self.hint_cell = None
             path = self.game.path(self.hint_arrow_id)
             row, col = path.cells[-1]
-            self.set_feedback(f"提示：点击经过第 {row + 1} 行第 {col + 1} 列的高亮折线", "success")
+            self.set_feedback(f"提示：点击高亮折线，端点在第 {row + 1} 行第 {col + 1} 列", "success")
         else:
             choices = self.game.removable_arrows()
             if not choices:
@@ -537,6 +544,8 @@ class ArrowEscapeApp:
             self.hint_arrow_id = None
             row, col = self.hint_cell
             self.set_feedback(f"提示：点击第 {row + 1} 行第 {col + 1} 列的高亮箭头", "success")
+        self.hints_remaining -= 1
+        self.level_score = max(0, self.level_score - HINT_PENALTY)
 
     def on_board_click_pos(self, position: tuple[int, int]) -> None:
         if self.animating:
@@ -906,8 +915,11 @@ class ArrowEscapeApp:
             self.feedback, 300, 690, 14,
             feedback_colors.get(self.feedback_kind, (216, 221, 238)), center=True, bold=True,
         )
-        self.draw_text("提示", 84, 752, 16, WHITE, center=True, bold=True)
-        hint_color = (255, 211, 75) if self.hint_rect.collidepoint(mouse) else (255, 193, 55)
+        self.draw_text(f"提示 ×{self.hints_remaining}", 84, 752, 16, WHITE, center=True, bold=True)
+        if self.hints_remaining <= 0:
+            hint_color = (103, 106, 126)
+        else:
+            hint_color = (255, 211, 75) if self.hint_rect.collidepoint(mouse) else (255, 193, 55)
         pygame.draw.circle(self.screen, hint_color, (84, 720), 24)
         self.draw_text("?", 84, 718, 25, WHITE, center=True, bold=True)
         helper_text = "点击整条彩色折线" if self.selected_mode == "advanced" else "观察同行同列"
