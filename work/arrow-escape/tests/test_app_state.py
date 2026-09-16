@@ -500,6 +500,25 @@ class PygameStateTest(unittest.TestCase):
         for name in ("launch", "collision", "pop", "hint", "clear", "missing"):
             self.app.play_sound(name)
 
+    def test_mute_button_toggles_and_persists_preference(self) -> None:
+        self.assertTrue(self.app.sound_enabled)
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.mute_rect.center,
+        ))
+        self.assertFalse(self.app.sound_enabled)
+        self.assertIn("静音", self.app.feedback)
+        saved = json.loads(self.save_path.read_text(encoding="utf-8"))
+        self.assertFalse(saved["sound_enabled"])
+        self.app.draw()
+
+        restored = main.ArrowEscapeApp(create_display=False, save_path=self.save_path)
+        self.assertFalse(restored.sound_enabled)
+        restored.start_new_game()
+        restored.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=restored.mute_rect.center,
+        ))
+        self.assertTrue(restored.sound_enabled)
+
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2
         self.app.elapsed_time = self.app.par_time

@@ -139,6 +139,7 @@ class ArrowEscapeApp:
         self.level_scored = False
         self.hints_remaining = MAX_HINTS
         self.level_records: dict[str, dict[int, int]] = {"basic": {}, "advanced": {}}
+        self.sound_enabled = True
         self.save_path = Path(save_path) if save_path is not None else SAVE_FILE
         self.load_progress()
         self.is_random_challenge = False
@@ -159,7 +160,6 @@ class ArrowEscapeApp:
         self.hint_arrow_id: int | None = None
         self.feedback = "点击前方没有阻挡的箭头"
         self.feedback_kind = "normal"
-        self.sound_enabled = True
         self.effects: list[dict[str, object]] = []
         self.assets = self._load_assets()
         self.sounds = self._make_sounds()
@@ -184,6 +184,7 @@ class ArrowEscapeApp:
         self.auto_solve_rect = pygame.Rect(232, 704, 136, 58)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "选关", "Grey")
+        self.mute_rect = pygame.Rect(416, 52, 46, 46)
         self.next_button = Button(pygame.Rect(88, 620, 200, 60), "下一关", "Green")
         self.retry_button = Button(pygame.Rect(88, 620, 200, 60), "重新挑战", "Red")
         self.replay_button = Button(pygame.Rect(88, 620, 200, 60), "再玩一次", "Green")
@@ -260,6 +261,18 @@ class ArrowEscapeApp:
                 sound.play()
             except pygame.error:
                 pass
+
+    def toggle_sound(self) -> None:
+        """切换全局音效，并将选择写入本地存档。"""
+        self.sound_enabled = not self.sound_enabled
+        if self.sound_enabled:
+            self.play_sound("hint")
+            self.set_feedback("音效已开启", "success")
+        else:
+            if pygame.mixer.get_init() is not None:
+                pygame.mixer.stop()
+            self.set_feedback("已切换为静音模式", "normal")
+        self.save_progress()
 
     @staticmethod
     def flight_travel(elapsed: float) -> float:
@@ -455,7 +468,9 @@ class ArrowEscapeApp:
                         self.start_new_game()
                         break
         elif self.current_screen == "game":
-            if self.auto_solve_rect.collidepoint(pos):
+            if self.mute_rect.collidepoint(pos):
+                self.toggle_sound()
+            elif self.auto_solve_rect.collidepoint(pos):
                 if self.auto_solving:
                     self.toggle_auto_pause()
                 elif not self.animating:
@@ -728,6 +743,10 @@ class ArrowEscapeApp:
             if isinstance(score, int) and not isinstance(score, bool):
                 self.total_score = max(0, score)
 
+            sound_enabled = data.get("sound_enabled", True)
+            if isinstance(sound_enabled, bool):
+                self.sound_enabled = sound_enabled
+
             raw_records = data.get("level_records", {})
             if isinstance(raw_records, dict):
                 for record_mode, level_count in (
@@ -757,6 +776,7 @@ class ArrowEscapeApp:
             "selected_mode": self.selected_mode,
             "selected_level": self.selected_level_index,
             "total_score": self.total_score,
+            "sound_enabled": self.sound_enabled,
             "level_records": {
                 mode: {str(index): stars for index, stars in records.items()}
                 for mode, records in self.level_records.items()
@@ -1306,6 +1326,27 @@ class ArrowEscapeApp:
         pygame.draw.circle(surface, color, (x + 9, y - 5), 10)
         pygame.draw.polygon(surface, color, ((x - 18, y), (x + 18, y), (x, y + 23)))
 
+    def draw_sound_button(self, mouse: tuple[int, int]) -> None:
+        """绘制不依赖字体的扬声器/静音图标。"""
+        hovered = self.mute_rect.collidepoint(mouse)
+        background = (91, 105, 143) if hovered else (75, 82, 113)
+        pygame.draw.rect(self.screen, background, self.mute_rect, border_radius=13)
+        pygame.draw.rect(self.screen, (135, 150, 187), self.mute_rect, width=2, border_radius=13)
+        x, y = self.mute_rect.center
+        pygame.draw.rect(self.screen, WHITE, (x - 13, y - 6, 7, 12), border_radius=2)
+        pygame.draw.polygon(
+            self.screen, WHITE,
+            ((x - 7, y - 6), (x + 1, y - 13), (x + 1, y + 13), (x - 7, y + 6)),
+        )
+        if self.sound_enabled:
+            pygame.draw.arc(self.screen, (103, 224, 168), (x - 3, y - 12, 18, 24),
+                            -math.pi / 2, math.pi / 2, 3)
+            pygame.draw.arc(self.screen, (103, 224, 168), (x - 3, y - 17, 27, 34),
+                            -math.pi / 2, math.pi / 2, 3)
+        else:
+            pygame.draw.line(self.screen, (255, 116, 124), (x + 6, y - 8), (x + 18, y + 8), 4)
+            pygame.draw.line(self.screen, (255, 116, 124), (x + 18, y - 8), (x + 6, y + 8), 4)
+
     def draw_game_screen(self) -> None:
         mouse = pygame.mouse.get_pos()
         self.screen.fill((61, 64, 89))
@@ -1319,6 +1360,7 @@ class ArrowEscapeApp:
         self.home_button.enabled = controls_enabled
         self.restart_button.draw(self, mouse)
         self.home_button.draw(self, mouse)
+        self.draw_sound_button(mouse)
         title = "随机挑战" if self.is_random_challenge else f"关卡 {self.current_level_index + 1}"
         self.draw_text(title, 300, 20, 27, WHITE, center=True, bold=True)
         if self.is_random_challenge:
