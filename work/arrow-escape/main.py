@@ -143,6 +143,8 @@ class ArrowEscapeApp:
         self.animating = False
         self.animation: dict[str, object] | None = None
         self.help_visible = False
+        self.clear_confirm_visible = False
+        self.progress_notice = ""
         self.hint_cell: tuple[int, int] | None = None
         self.hint_arrow_id: int | None = None
         self.feedback = "点击前方没有阻挡的箭头"
@@ -161,6 +163,9 @@ class ArrowEscapeApp:
             pygame.Rect(x - 58, y - 43, 116, 86) for x, y in self.level_node_centers
         )
         self.level_back_button = Button(pygame.Rect(24, 38, 105, 48), "返回", "Grey")
+        self.clear_progress_button = Button(pygame.Rect(438, 38, 138, 48), "清除进度", "Red")
+        self.clear_confirm_button = Button(pygame.Rect(112, 480, 176, 56), "确认清除", "Red")
+        self.clear_cancel_button = Button(pygame.Rect(312, 480, 176, 56), "取消", "Grey")
         self.hint_rect = pygame.Rect(36, 684, 98, 88)
         self.restart_button = Button(pygame.Rect(26, 48, 100, 52), "重开", "Green")
         self.home_button = Button(pygame.Rect(474, 48, 100, 52), "选关", "Grey")
@@ -305,15 +310,26 @@ class ArrowEscapeApp:
             elif self.help_button.contains(pos):
                 self.help_visible = True
         elif self.current_screen == "level_select":
+            if self.clear_confirm_visible:
+                if self.clear_confirm_button.contains(pos):
+                    self.clear_progress()
+                    self.clear_confirm_visible = False
+                elif self.clear_cancel_button.contains(pos):
+                    self.clear_confirm_visible = False
+                return
             if self.level_back_button.contains(pos):
                 self.show_start_screen()
+            elif self.clear_progress_button.contains(pos):
+                self.clear_confirm_visible = True
             elif self.level_mode_basic_rect.collidepoint(pos):
                 self.selected_mode = "basic"
                 self.selected_level_index = 0
+                self.progress_notice = ""
                 self.save_progress()
             elif self.level_mode_advanced_rect.collidepoint(pos):
                 self.selected_mode = "advanced"
                 self.selected_level_index = 0
+                self.progress_notice = ""
                 self.save_progress()
             else:
                 for index, rect in enumerate(self.level_card_rects):
@@ -383,6 +399,7 @@ class ArrowEscapeApp:
         if not self.animating:
             self.current_screen = "level_select"
             self.help_visible = False
+            self.clear_confirm_visible = False
 
     def start_new_game(self) -> None:
         self.current_level_index = self.selected_level_index
@@ -501,6 +518,23 @@ class ArrowEscapeApp:
             except OSError:
                 pass
             return False
+
+    def clear_progress(self) -> bool:
+        """清空内存进度并删除本地存档文件。"""
+        self.selected_mode = "basic"
+        self.selected_level_index = 0
+        self.current_level_index = 0
+        self.total_score = 0
+        self.earned_stars = 0
+        self.level_records = {"basic": {}, "advanced": {}}
+        removed = True
+        for path in (self.save_path, self.save_path.with_suffix(self.save_path.suffix + ".tmp")):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                removed = False
+        self.progress_notice = "游戏进度已清除" if removed else "存档文件删除失败，请关闭占用后重试"
+        return removed
 
     def reset_level_stats(self) -> None:
         """重置本关计时、分数和星级。"""
@@ -948,6 +982,28 @@ class ArrowEscapeApp:
                 self.draw_text(f"× {best_stars}", star_badge.x + 31, star_badge.y + 3, 12, NAVY, bold=True)
 
         self.level_back_button.draw(self, mouse)
+        self.clear_progress_button.draw(self, mouse)
+        if self.progress_notice:
+            notice_color = GREEN if "已清除" in self.progress_notice else RED
+            self.draw_text(self.progress_notice, 300, 790, 13, notice_color, center=True, bold=True)
+        if self.clear_confirm_visible:
+            self.draw_clear_progress_modal()
+
+    def draw_clear_progress_modal(self) -> None:
+        """绘制清除存档的二次确认弹窗。"""
+        veil = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        veil.fill((25, 38, 72, 165))
+        self.screen.blit(veil, (0, 0))
+        panel = pygame.Rect(72, 260, 456, 320)
+        self.draw_panel(panel, radius=28)
+        self.draw_text("清除游戏进度？", 300, 323, 28, NAVY, center=True, bold=True)
+        self.draw_wrapped_text(
+            "累计分数、两种模式的通关标记和最佳星级都会被清空，此操作无法撤销。",
+            pygame.Rect(122, 375, 356, 70), 15, MUTED, line_gap=8,
+        )
+        mouse = pygame.mouse.get_pos()
+        self.clear_confirm_button.draw(self, mouse)
+        self.clear_cancel_button.draw(self, mouse)
 
     @staticmethod
     def draw_heart(surface: pygame.Surface, center: tuple[int, int], color: tuple[int, int, int]) -> None:

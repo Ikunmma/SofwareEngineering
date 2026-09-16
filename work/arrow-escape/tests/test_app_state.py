@@ -311,6 +311,51 @@ class PygameStateTest(unittest.TestCase):
         self.assertEqual(restored.level_records["basic"], {0: 3})
         self.assertEqual(restored.level_records["advanced"], {2: 2})
 
+    def test_clear_progress_requires_confirmation_and_deletes_save(self) -> None:
+        self.app.total_score = 1800
+        self.app.level_records = {"basic": {0: 3}, "advanced": {1: 2}}
+        self.assertTrue(self.app.save_progress())
+        self.assertTrue(self.save_path.exists())
+        self.app.current_screen = "level_select"
+
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.clear_progress_button.rect.center,
+        ))
+        self.assertTrue(self.app.clear_confirm_visible)
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.clear_cancel_button.rect.center,
+        ))
+        self.assertFalse(self.app.clear_confirm_visible)
+        self.assertTrue(self.save_path.exists())
+        self.assertEqual(self.app.total_score, 1800)
+
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.clear_progress_button.rect.center,
+        ))
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.clear_confirm_button.rect.center,
+        ))
+        self.assertFalse(self.app.clear_confirm_visible)
+        self.assertFalse(self.save_path.exists())
+        self.assertEqual(self.app.total_score, 0)
+        self.assertEqual(self.app.level_records, {"basic": {}, "advanced": {}})
+        self.assertEqual(self.app.selected_mode, "basic")
+        self.assertIn("已清除", self.app.progress_notice)
+
+    def test_clear_confirmation_blocks_level_selection(self) -> None:
+        self.app.current_screen = "level_select"
+        self.app.clear_confirm_visible = True
+        self.app.handle_event(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1,
+            pos=self.app.level_card_rects[2].center,
+        ))
+        self.assertEqual(self.app.current_screen, "level_select")
+        self.assertTrue(self.app.clear_confirm_visible)
+
     def test_star_rating_boundaries(self) -> None:
         self.app.mistakes_remaining = 2
         self.app.elapsed_time = self.app.par_time
